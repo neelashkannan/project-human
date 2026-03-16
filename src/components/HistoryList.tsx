@@ -36,10 +36,11 @@ export default function HistoryList() {
   };
 
   const handleRemove = async (id: Id<"conversions">) => {
+    if (!user?.uid) return;
     setRemovingId(id);
     // Wait for fade-out animation
     setTimeout(async () => {
-      await removeConversion({ id });
+      await removeConversion({ id, userId: user.uid });
       setRemovingId(null);
     }, 300);
   };

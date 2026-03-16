@@ -25,15 +25,14 @@ export const save = mutation({
 export const getRecent = query({
   args: { userId: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const all = await ctx.db
-      .query("conversions")
-      .withIndex("by_creation")
-      .order("desc")
-      .take(50);
-    if (args.userId) {
-      return all.filter((c) => c.userId === args.userId).slice(0, 20);
+    if (!args.userId) {
+      return [];
     }
-    return all.filter((c) => !c.userId).slice(0, 20);
+    return await ctx.db
+      .query("conversions")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .order("desc")
+      .take(20);
   },
 });
 
@@ -45,8 +44,12 @@ export const getById = query({
 });
 
 export const remove = mutation({
-  args: { id: v.id("conversions") },
+  args: { id: v.id("conversions"), userId: v.string() },
   handler: async (ctx, args) => {
+    const doc = await ctx.db.get(args.id);
+    if (!doc || doc.userId !== args.userId) {
+      throw new Error("Not found");
+    }
     await ctx.db.delete(args.id);
   },
 });

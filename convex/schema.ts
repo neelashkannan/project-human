@@ -9,7 +9,9 @@ export default defineSchema({
     model: v.optional(v.string()),
     createdAt: v.number(),
     userId: v.optional(v.string()),
-  }).index("by_creation", ["createdAt"]),
+  })
+    .index("by_creation", ["createdAt"])
+    .index("by_user", ["userId", "createdAt"]),
 
   usage: defineTable({
     date: v.string(),
