@@ -112,7 +112,7 @@ async function callKimi(text: string, tonePrompt: string): Promise<string> {
     body: JSON.stringify({
       model: "kimi-k2.5",
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.7,
+      temperature: 1,
     }),
   });
 
