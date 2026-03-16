@@ -10,6 +10,7 @@
 
 import type * as conversions from "../conversions.js";
 import type * as humanize from "../humanize.js";
+import type * as users from "../users.js";
 
 import type {
   ApiFromModules,
@@ -20,6 +21,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   conversions: typeof conversions;
   humanize: typeof humanize;
+  users: typeof users;
 }>;
 
 /**

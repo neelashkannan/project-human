@@ -2,6 +2,15 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  users: defineTable({
+    firebaseUid: v.string(),
+    name: v.string(),
+    email: v.string(),
+    photoURL: v.optional(v.string()),
+    lastLogin: v.number(),
+    createdAt: v.number(),
+  }).index("by_firebase_uid", ["firebaseUid"]),
+
   conversions: defineTable({
     originalText: v.string(),
     humanizedText: v.string(),
