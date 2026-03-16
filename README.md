@@ -1,8 +1,86 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# justin.human
+
+> Transform AI-generated text into natural, authentic human writing.
+
+A full-stack web app powered by **Next.js**, **Convex**, and **Google Gemini 2.0 Flash**.
+
+---
+
+## Features
+
+- **AI-to-Human Text Conversion** — Paste AI text, get human-sounding output
+- **4 Tone Options** — Casual, Professional, Academic, Creative
+- **Real-Time History** — All conversions saved & synced via Convex
+- **Beautiful Dark UI** — Custom-designed with Tailwind CSS
+- **Custom Logo** — SVG logo with human + tech hybrid motif
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Next.js 16 (App Router), React 19, Tailwind CSS 4 |
+| Backend | Convex.dev (real-time database + functions) |
+| AI | Google Gemini 2.0 Flash via `@google/generative-ai` |
 
 ## Getting Started
 
-First, run the development server:
+### 1. Install Dependencies
+
+```bash
+npm install
+```
+
+### 2. Set Up Convex
+
+```bash
+npx convex dev
+```
+
+This will prompt you to create a Convex project (free tier). It will automatically set `NEXT_PUBLIC_CONVEX_URL` in your `.env.local`.
+
+### 3. Get a Gemini API Key
+
+1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
+2. Create a free API key
+3. Add it to `.env.local`:
+
+```
+GEMINI_API_KEY=your_key_here
+```
+
+### 4. Run the Dev Server
+
+```bash
+npm run dev
+```
+
+This starts both Next.js and Convex dev servers. Open [http://localhost:3000](http://localhost:3000).
+
+## Project Structure
+
+```
+├── convex/                        # Convex backend
+│   ├── schema.ts                  # Database schema
+│   └── conversions.ts             # Mutations & queries  
+├── src/
+│   ├── app/
+│   │   ├── api/humanize/route.ts  # Gemini API endpoint
+│   │   ├── humanize/page.tsx      # Text humanizer page
+│   │   ├── history/page.tsx       # Conversion history
+│   │   ├── layout.tsx             # Root layout
+│   │   └── page.tsx               # Landing page
+│   └── components/
+│       ├── ConvexClientProvider.tsx
+│       ├── HumanizeForm.tsx
+│       ├── HistoryList.tsx
+│       ├── Logo.tsx
+│       ├── Navbar.tsx
+│       └── Footer.tsx
+```
+
+## License
+
+MIT
 
 ```bash
 npm run dev
