@@ -15,6 +15,7 @@ const TONES = [
 const MODELS = [
   { id: "monkey", label: "Monkey-v1", desc: "Super fast", emoji: "⚡" },
   { id: "monk", label: "Monk-v1", desc: "Super good", emoji: "🧘" },
+  { id: "hypermonk", label: "Arromal-hypermonk", desc: "Super powered monk", emoji: "🔥" },
 ];
 
 export default function HumanizeForm() {

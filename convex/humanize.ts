@@ -97,6 +97,36 @@ async function callGrok(text: string, tonePrompt: string): Promise<string> {
   return cleanOutput(content);
 }
 
+async function callKimi(text: string, tonePrompt: string): Promise<string> {
+  const apiKey = process.env.KIMI_API_KEY;
+  if (!apiKey) throw new Error("Kimi API key not configured");
+
+  const prompt = buildPrompt(tonePrompt, text);
+
+  const response = await fetch("https://api.moonshot.cn/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "kimi-k2.5",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.7,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Kimi API error: ${response.status} ${err}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error("No response from Kimi");
+  return cleanOutput(content);
+}
+
 export const humanize = action({
   args: {
     text: v.string(),
@@ -115,9 +145,11 @@ export const humanize = action({
       throw new Error("Valid tone is required (casual, professional, academic, creative)");
     }
 
-    // "monk" = Gemini (super good), "monkey" = Grok (super fast)
     if (model === "monk") {
       return await callGemini(text, tonePrompt);
+    }
+    if (model === "hypermonk") {
+      return await callKimi(text, tonePrompt);
     }
     // Default to Grok (monkey)
     return await callGrok(text, tonePrompt);
