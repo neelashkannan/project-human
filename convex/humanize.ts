@@ -1,6 +1,5 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // ── Research-backed approach ──────────────────────────────────────────
 // Key finding: In-context examples (showing AI→Human transformation
@@ -189,28 +188,13 @@ function postProcess(text: string): string {
   return out;
 }
 
-// ── Model callers ─────────────────────────────────────────────────────
+// ── Model callers (all use x.ai API) ──────────────────────────────────
 
-async function callGemini(text: string, tone: string): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("Gemini API key not configured");
-
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    systemInstruction: buildSystemMessage(tone),
-    generationConfig: { temperature: 0.7, topP: 0.9, topK: 40 },
-  });
-
-  try {
-    const result = await model.generateContent(buildUserPrompt(text));
-    return postProcess(result.response.text());
-  } catch {
-    throw new Error("MODEL_ERROR");
-  }
-}
-
-async function callGrok(text: string, tone: string): Promise<string> {
+async function callXai(
+  text: string,
+  tone: string,
+  modelName: string
+): Promise<string> {
   const apiKey = process.env.GROK_API_KEY;
   if (!apiKey) throw new Error("Grok API key not configured");
 
@@ -221,7 +205,7 @@ async function callGrok(text: string, tone: string): Promise<string> {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "grok-4-1-fast-reasoning",
+      model: modelName,
       messages: [
         { role: "system", content: buildSystemMessage(tone) },
         { role: "user", content: buildUserPrompt(text) },
@@ -238,47 +222,6 @@ async function callGrok(text: string, tone: string): Promise<string> {
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new Error("MODEL_ERROR");
   return postProcess(content);
-}
-
-async function callKimi(text: string, tone: string): Promise<string> {
-  const apiKey = process.env.KIMI_API_KEY;
-  if (!apiKey) throw new Error("Kimi API key not configured");
-
-  const maxRetries = 3;
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const response = await fetch("https://api.moonshot.ai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "kimi-k2.5",
-        messages: [
-          { role: "system", content: buildSystemMessage(tone) },
-          { role: "user", content: buildUserPrompt(text) },
-        ],
-        temperature: 0.7,
-        top_p: 0.9,
-      }),
-    });
-
-    if (response.status === 429) {
-      if (attempt < maxRetries - 1) {
-        await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
-        continue;
-      }
-      throw new Error("MODEL_BUSY");
-    }
-    if (!response.ok) throw new Error("MODEL_ERROR");
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) throw new Error("MODEL_ERROR");
-    return postProcess(content);
-  }
-
-  throw new Error("MODEL_BUSY");
 }
 
 // ── Main action ───────────────────────────────────────────────────────
@@ -301,12 +244,12 @@ export const humanize = action({
 
     try {
       if (model === "monk") {
-        return await callGemini(text, tone);
+        return await callXai(text, tone, "grok-4.20-beta-0309-non-reasoning");
       }
       if (model === "hypermonk") {
-        return await callKimi(text, tone);
+        return await callXai(text, tone, "grok-4.20-beta-0309-reasoning");
       }
-      return await callGrok(text, tone);
+      return await callXai(text, tone, "grok-4-1-fast-reasoning");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
       if (msg === "MODEL_BUSY") {
