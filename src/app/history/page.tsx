@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 
 export default function HistoryPage() {
-  const router = useRouter();
   useEffect(() => {
-    router.replace("/#history");
-  }, [router]);
+    const base = window.location.pathname.replace(/\/history\/?$/, "/");
+    window.location.replace(base + "#history");
+  }, []);
   return null;
 }

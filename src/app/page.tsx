@@ -10,8 +10,6 @@ export default function Home() {
 
   return (
     <div>
-      <div className="bg-gradient" />
-
       {/* ── Hero ── */}
       <section
         id="hero"

@@ -18,7 +18,41 @@ const MODELS = [
   { id: "hypermonk", label: "Arromal-hypermonk", desc: "Super powered monk", emoji: "🔥" },
 ];
 
+type SaveFn = ((args: {
+  originalText: string;
+  humanizedText: string;
+  tone: string;
+  model?: string;
+  userId?: string;
+}) => Promise<unknown>) | null;
+
+type HumanizeFn = ((args: {
+  text: string;
+  tone: string;
+  model?: string;
+}) => Promise<string>) | null;
+
+/** Wrapper that injects Convex hooks (only mounts when ConvexProvider exists) */
+function ConnectedForm() {
+  const saveConversion = useMutation(api.conversions.save);
+  const humanizeAction = useAction(api.humanize.humanize);
+  return <FormUI saveConversion={saveConversion} humanizeAction={humanizeAction} />;
+}
+
+/** Main export — chooses connected vs offline form */
 export default function HumanizeForm() {
+  const { convexAvailable } = useAuth();
+  if (convexAvailable) return <ConnectedForm />;
+  return <FormUI saveConversion={null} humanizeAction={null} />;
+}
+
+function FormUI({
+  saveConversion,
+  humanizeAction,
+}: {
+  saveConversion: SaveFn;
+  humanizeAction: HumanizeFn;
+}) {
   const [inputText, setInputText] = useState("");
   const [outputText, setOutputText] = useState("");
   const [displayedText, setDisplayedText] = useState("");
@@ -31,8 +65,6 @@ export default function HumanizeForm() {
   const [shakeError, setShakeError] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
 
-  const saveConversion = useMutation(api.conversions.save);
-  const humanizeAction = useAction(api.humanize.humanize);
   const { user, signInWithGoogle } = useAuth();
 
   // Typewriter effect for output
@@ -60,6 +92,12 @@ export default function HumanizeForm() {
 
   const handleHumanize = async () => {
     if (!inputText.trim()) return;
+    if (!humanizeAction) {
+      setError("Backend is not connected. Please try again later.");
+      setShakeError(true);
+      setTimeout(() => setShakeError(false), 500);
+      return;
+    }
 
     setLoading(true);
     setError("");
@@ -74,16 +112,18 @@ export default function HumanizeForm() {
 
       setOutputText(humanizedText);
 
-      try {
-        await saveConversion({
-          originalText: inputText.trim(),
-          humanizedText,
-          tone,
-          model,
-          userId: user?.uid,
-        });
-      } catch {
-        // Don't block UI if Convex save fails
+      if (saveConversion) {
+        try {
+          await saveConversion({
+            originalText: inputText.trim(),
+            humanizedText,
+            tone,
+            model,
+            userId: user?.uid,
+          });
+        } catch {
+          // Don't block UI if Convex save fails
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to humanize text";

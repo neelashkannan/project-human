@@ -17,12 +17,12 @@ export default function ConvexClientProvider({
   }, [convexUrl]);
 
   if (!client) {
-    return <>{children}</>;
+    return <AuthProvider convexAvailable={false}>{children}</AuthProvider>;
   }
 
   return (
     <ConvexProvider client={client}>
-      <AuthProvider>
+      <AuthProvider convexAvailable={true}>
         {children}
       </AuthProvider>
     </ConvexProvider>

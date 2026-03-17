@@ -21,10 +21,37 @@ const TONE_EMOJI: Record<string, string> = {
   creative: "🎨",
 };
 
-export default function HistoryList() {
+/** Connected version (mounts only when Convex is available) */
+function ConnectedHistoryList() {
   const { user } = useAuth();
   const conversions = useQuery(api.conversions.getRecent, { userId: user?.uid }) as Conversion[] | undefined;
   const removeConversion = useMutation(api.conversions.remove);
+  return <HistoryListUI conversions={conversions} removeConversion={removeConversion} />;
+}
+
+export default function HistoryList() {
+  const { convexAvailable } = useAuth();
+  if (!convexAvailable) {
+    return (
+      <div className="text-center py-12 animate-blur-in">
+        <div className="text-4xl mb-3 animate-float">✨</div>
+        <p className="text-[var(--text-muted)]">
+          No conversions yet. Humanize some text to see it here.
+        </p>
+      </div>
+    );
+  }
+  return <ConnectedHistoryList />;
+}
+
+function HistoryListUI({
+  conversions,
+  removeConversion,
+}: {
+  conversions: Conversion[] | undefined;
+  removeConversion: (args: { id: Id<"conversions">; userId: string }) => Promise<unknown>;
+}) {
+  const { user } = useAuth();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);

@@ -30,6 +30,7 @@ jobs:
       - run: npx next build
         env:
           NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+          NODE_ENV: production
 
       - run: touch out/.nojekyll
 
