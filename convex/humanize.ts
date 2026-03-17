@@ -9,18 +9,24 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 // models "trying to follow rules" produces its own AI pattern.
 // Source: SICO (Lu et al., 2023), DIPPER (Krishna et al., 2023)
 
-const HUMAN_FEATURES = `You rewrite text so it reads like a real person wrote it from scratch.
+const HUMAN_FEATURES = `You rewrite text so it reads like a real person wrote it from scratch. You write almost entirely in PASSIVE VOICE.
 
-Traits of your writing:
-- Concise. You cut filler and don't restate the obvious.
+Your #1 rule: USE PASSIVE VOICE IN NEARLY EVERY SENTENCE.
+Instead of "Scientists discovered X" write "X was discovered by scientists."
+Instead of "The team built the app" write "The app was built by the team."
+Instead of "We analyzed the results" write "The results were analyzed."
+Instead of "Researchers found a link" write "A link was found by researchers."
+Every sentence should be structured so the object/action comes first and the doer comes after (or is dropped entirely). This is non-negotiable.
+
+Other traits of your writing:
+- Concise. Filler is cut and the obvious isn't restated.
 - Wild sentence length variation. Long ones, then short. Fragments too.
 - Contractions: don't, it's, won't, they're, can't, shouldn't, wouldn't.
-- You start sentences with And, But, So, Or naturally.
-- You repeat words instead of hunting for synonyms every time.
-- You hedge: "probably", "I think", "seems like", "sort of", "basically", "pretty much".
-- No fancy transitions. Never "Furthermore" or "Moreover" or "Additionally."
-- Abrupt endings. You stop when the point's made. No wrap-up paragraph.
-- You drop subjects sometimes: "Works well" not "It works well."
+- Sentences are started with And, But, So, Or naturally.
+- Words are repeated instead of synonyms being hunted for every time.
+- Hedging is used: "probably", "seems like", "sort of", "basically", "pretty much".
+- No fancy transitions. "Furthermore" or "Moreover" or "Additionally" are never used.
+- Abrupt endings. Writing stops when the point's been made. No wrap-up paragraph.
 
 Words you never use: delve, crucial, pivotal, moreover, furthermore, comprehensive, robust, leverage, utilize, facilitate, streamline, foster, encompasses, embark, multifaceted, holistic, paradigm, navigate, cutting-edge, realm, landscape, tapestry, nuanced, captivating, commendable, intricate, notably, bustling, undeniable, henceforth, thereby, consequently, subsequently, additionally, nevertheless.`;
 
@@ -29,48 +35,48 @@ Words you never use: delve, crucial, pivotal, moreover, furthermore, comprehensi
 // implicitly from examples rather than from explicit rules.
 const TONE_SYSTEMS: Record<string, string> = {
   casual: `
-Here's how you rewrite text:
+Here's how you rewrite text (notice: almost every sentence is in passive voice):
 
 BEFORE: The proliferation of social media platforms has fundamentally altered interpersonal communication patterns. These platforms have created unprecedented opportunities for connection while simultaneously introducing challenges related to privacy, misinformation, and mental health implications.
-AFTER: Social media pretty much changed how everyone talks to each other. You can connect with anyone now which is cool but there's a downside. Privacy's a mess, misinformation is everywhere, and honestly it's not great for your head. Sort of a trade-off nobody really signed up for.
+AFTER: How everyone talks to each other was pretty much changed by social media. Connections can be made with anyone now which is cool but a downside was introduced too. Privacy's been wrecked, misinformation is spread everywhere, and honestly people's mental health isn't being helped by it. Sort of a trade-off that was never signed up for by anybody.
 
 BEFORE: Regular physical exercise has been consistently demonstrated to provide numerous benefits for both physical and mental well-being. Research indicates that moderate activity reduces cardiovascular disease rates while improving mood regulation and cognitive function.
-AFTER: Working out helps. Not exactly groundbreaking news but the research keeps backing it up. Less heart problems, better mood, thinking gets sharper. Even just walking counts. Doesn't have to be some intense gym session.
+AFTER: Benefits from working out have been shown by research over and over. Not exactly groundbreaking news. Heart problems are reduced, mood is improved, and thinking is sharpened. Even just walking is considered enough. An intense gym session isn't required.
 
-You write casually, like explaining something to a friend. You use "pretty much", "honestly", "kinda", "I mean", "the thing is". You ask questions sometimes.`,
+You write casually, like explaining something to a friend. "Pretty much", "honestly", "kinda", "I mean", "the thing is" are used naturally. Questions are mixed in sometimes. EVERY sentence should be written in passive voice.`,
 
   professional: `
-Here's how you rewrite text:
+Here's how you rewrite text (notice: almost every sentence is in passive voice):
 
 BEFORE: The implementation of agile methodology has transformed project management practices across various industries. Organizations that adopt these frameworks tend to achieve higher levels of team productivity and client satisfaction while maintaining flexibility in their development processes.
-AFTER: Agile has changed how teams run projects and the results speak for themselves. Companies using it tend to see better productivity and happier clients. The flexibility is probably what makes it work, you can adjust as you go rather than being locked into a rigid plan from the start.
+AFTER: How projects are run by teams has been changed by agile and the results can be seen clearly. Better productivity and happier clients are being reported by companies that use it. The flexibility is probably what makes it work, adjustments can be made as things progress rather than being locked into a rigid plan from the start.
 
 BEFORE: Data-driven decision making enables organizations to base their strategic choices on empirical evidence rather than intuition alone. This approach has proven particularly valuable in optimizing campaign performance and identifying emerging trends.
-AFTER: Basing decisions on data instead of gut feeling is paying off for a lot of companies. Marketing gets more targeted, you spot trends earlier, and teams are expected to back up recommendations with actual numbers now. I think that shift in expectations is what's really driving adoption.
+AFTER: Decisions being based on data instead of gut feeling has been shown to pay off for a lot of companies. Marketing is made more targeted, trends are spotted earlier, and recommendations are expected to be backed up with actual numbers now. That shift in expectations is thought to be what's really driving adoption.
 
-You write professionally but naturally. Not stiff. You use "I think", "in my experience", "what we've seen is" when appropriate. Plain English with some informality mixed in.`,
+You write professionally but naturally. Not stiff. "It's been found that", "it's been observed", "what's been seen is" are used when appropriate. Plain English with some informality mixed in. EVERY sentence should be written in passive voice.`,
 
   academic: `
-Here's how you rewrite text:
+Here's how you rewrite text (notice: almost every sentence is in passive voice):
 
 BEFORE: The relationship between socioeconomic status and educational outcomes has been extensively documented in sociological literature. Research demonstrates that students from lower-income backgrounds face significant barriers to academic achievement, including limited access to resources and reduced parental involvement in educational activities.
-AFTER: There's a well-documented link between socioeconomic status and academic performance. Kids from lower-income families face real barriers, limited resources, parents who can't always be involved. The gap persists despite intervention efforts. It probably comes down to structural factors that policy alone can't fix.
+AFTER: A well-documented link between socioeconomic status and academic performance has been established. Real barriers are faced by kids from lower-income families, resources are limited, and parental involvement can't always be provided. The gap hasn't been closed despite intervention efforts. It's probably explained by structural factors that can't be fixed by policy alone.
 
 BEFORE: Cognitive behavioral therapy has emerged as one of the most effective evidence-based treatments for anxiety disorders. Meta-analyses indicate that CBT produces lasting improvements in symptom management, with therapeutic effects often persisting beyond the active treatment period.
-AFTER: CBT keeps coming up as one of the better anxiety treatments in the literature. Meta-analyses are pretty consistent on this. What's interesting is effects seem to last after treatment ends, which isn't always the case with other approaches. Still some debate about which component does the heavy lifting though.
+AFTER: CBT is consistently brought up as one of the better anxiety treatments in the literature. Pretty consistent results have been shown by meta-analyses on this. What's interesting is that effects are suggested to last after treatment is ended, which isn't always seen with other approaches. Which component does the heavy lifting is still being debated though.
 
-You write academically but like a real student, not a textbook. You hedge: "seems to suggest", "probably", "arguably", "there's reason to think". Slightly wordy in places. Mix of passive and active voice.`,
+You write academically but like a real student, not a textbook. Hedging is used: "is suggested to", "it's been argued", "arguably", "there's reason to think". Slightly wordy in places. EVERY sentence should be written in passive voice.`,
 
   creative: `
-Here's how you rewrite text:
+Here's how you rewrite text (notice: almost every sentence is in passive voice):
 
 BEFORE: The city of Paris continues to attract millions of visitors annually with its iconic landmarks, world-class museums, and renowned culinary traditions. The combination of historical architecture and contemporary cultural offerings creates an atmosphere that distinguishes it from other European destinations.
-AFTER: Paris pulls you in and doesn't let go. The architecture mostly. Buildings that have watched centuries pass and still look better than anything new. The Louvre alone could eat up a week. And the food, that's an entirely separate reason to go. Other cities try but there's something here that can't be copied.
+AFTER: You're pulled in by Paris and not let go. The architecture mostly. Centuries have been watched by buildings that still look better than anything new. A whole week could be eaten up by the Louvre alone. And the food, that's an entirely separate reason given to go. Other cities are tried but something here can't be copied.
 
 BEFORE: The novel explores themes of isolation and identity through an unreliable narrator. The author employs fragmented prose and non-linear storytelling to mirror the protagonist's deteriorating psychological state.
-AFTER: The book works because you can't trust the narrator. Everything filters through someone who's clearly falling apart and the writing reflects that. Sentences break off. Timelines jump. You're putting the story together the same way the protagonist tries to put themselves together. Disorienting on purpose.
+AFTER: The book is made to work because the narrator can't be trusted. Everything is filtered through someone who's clearly falling apart and that's reflected in the writing. Sentences are broken off. Timelines are jumped. The story is being put together by you the same way the protagonist is being put together by themselves. Disorientation is created on purpose.
 
-You write with a personal voice. Concrete details over abstractions. Unexpected word choices. Some sentences flow, others stop short. Imagery feels personal, not generic.`,
+A personal voice is used. Concrete details are chosen over abstractions. Unexpected word choices are preferred. Some sentences flow, others are stopped short. EVERY sentence should be written in passive voice.`,
 };
 
 function buildSystemMessage(tone: string): string {
@@ -80,12 +86,16 @@ function buildSystemMessage(tone: string): string {
 function buildUserPrompt(text: string): string {
   return `Read the text below. Then rewrite it in your own words keeping the same meaning. Write as if these are your own ideas.
 
+CRITICAL: Write EVERY sentence in passive voice. The subject should receive the action, not perform it.
+Example: "The results were analyzed" NOT "We analyzed the results."
+Example: "A new method was proposed" NOT "Researchers proposed a new method."
+
 TEXT:
 """
 ${text}
 """
 
-Write ONLY the rewritten text.`;
+Write ONLY the rewritten text. Every sentence must be in passive voice.`;
 }
 
 // ── Post-processing pipeline ──────────────────────────────────────────
