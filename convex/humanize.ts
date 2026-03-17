@@ -177,8 +177,9 @@ async function callGeminiTwoPass(text: string, toneInstruction: string): Promise
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
-    model: "gemini-3.1-flash-lite-preview",
-    generationConfig: { temperature: 1.3, topP: 0.95, topK: 64 },
+    model: "gemini-2.5-flash",
+    systemInstruction: SYSTEM_PERSONA,
+    generationConfig: { temperature: 1.2, topP: 0.92, topK: 50 },
   });
 
   // Pass 1: Full rewrite
@@ -191,12 +192,15 @@ async function callGeminiTwoPass(text: string, toneInstruction: string): Promise
   }
   const pass1Output = scrubOutput(result.response.text());
 
-  // Pass 2: Humanize further
-  const pass2Prompt = buildPass2Prompt(pass1Output);
+  // Pass 2: Humanize further with a fresh model instance (no system persona carryover)
+  const editor = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    systemInstruction: "You are a human editor making a final polish pass. You write naturally as a real person, not as an AI. Your job is to make text feel genuinely human-written.",
+    generationConfig: { temperature: 1.0, topP: 0.88 },
+  });
   try {
-    result = await model.generateContent(pass2Prompt);
+    result = await editor.generateContent(buildPass2Prompt(pass1Output));
   } catch {
-    // If pass 2 fails, return pass 1 output (still better than nothing)
     return pass1Output;
   }
   return scrubOutput(result.response.text());
@@ -277,8 +281,8 @@ async function callKimiTwoPass(text: string, toneInstruction: string): Promise<s
           { role: "system", content: SYSTEM_PERSONA },
           { role: "user", content: buildPass1Prompt(toneInstruction, text) },
         ],
-        temperature: 1.4,
-        top_p: 0.92,
+        temperature: 1.1,
+        top_p: 0.90,
       }),
     });
 
@@ -309,11 +313,11 @@ async function callKimiTwoPass(text: string, toneInstruction: string): Promise<s
       body: JSON.stringify({
         model: "kimi-k2.5",
         messages: [
-          { role: "system", content: "You are a human editor making a final polish pass. Write naturally as a person, not as an AI." },
+          { role: "system", content: "You are a human editor making a final polish pass. You write naturally as a real person, not as an AI. Your job is to make text feel genuinely human-written." },
           { role: "user", content: buildPass2Prompt(pass1Output) },
         ],
-        temperature: 1.1,
-        top_p: 0.90,
+        temperature: 0.9,
+        top_p: 0.88,
       }),
     });
 
