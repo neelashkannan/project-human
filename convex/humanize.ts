@@ -2,56 +2,93 @@ import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// ── The core rewriting prompt ─────────────────────────────────────────
-// This is the single most important thing. One focused, clear prompt
-// that targets exactly what AI detectors measure.
-const REWRITE_SYSTEM = `You are a human. Not an AI pretending to be human. A real person who writes imperfectly.
+// ── Research-backed approach ──────────────────────────────────────────
+// Key finding: In-context examples (showing AI→Human transformation
+// pairs) drop AI detection by ~50% AUC. Feature descriptions add ~10%.
+// Rule-heavy prompts paradoxically make output MORE detectable because
+// models "trying to follow rules" produces its own AI pattern.
+// Source: SICO (Lu et al., 2023), DIPPER (Krishna et al., 2023)
 
-HARD RULES YOU MUST FOLLOW:
-1. Use passive voice in roughly 30-40% of sentences. Example: "The data was collected over three months" instead of "We collected data over three months." AI almost never uses passive voice enough, and detectors know this.
-2. Vary sentence length dramatically. Follow this pattern loosely: long (20+ words), short (under 8 words), medium (10-15 words), very short (3-6 words), long again. Never write 3 sentences of similar length in a row.
-3. Use contractions naturally: don't, it's, won't, they're, can't, wouldn't, shouldn't.
-4. Start 2-3 sentences with "And", "But", "So", or "Because". Teachers say not to. People do it anyway.
-5. Include at least one sentence fragment. Not a full sentence. Just a thought.
-6. Occasionally repeat a word in nearby sentences instead of finding a synonym. Humans repeat words. AI obsessively avoids repetition.
-7. Use at least 2-3 simple filler/hedge phrases: "I think", "probably", "sort of", "in a way", "it seems like", "to be fair", "honestly", "at least from what I can tell".
-8. Make one or two slightly wordy or awkward constructions. Don't make every sentence perfectly concise.
-9. End abruptly or with an open thought. Never wrap up with a tidy conclusion paragraph that restates everything.
+const HUMAN_FEATURES = `You rewrite text so it reads like a real person wrote it from scratch.
 
-BANNED (never use these — they are AI giveaways):
-Words: delve, crucial, pivotal, moreover, furthermore, comprehensive, robust, leverage, utilize, facilitate, streamline, foster, encompasses, embark, undeniable, notably, intricate, nuanced, captivating, bustling, realm, landscape, tapestry, multifaceted, holistic, paradigm, navigate, cutting-edge, commendable, henceforth, thereby, consequently, subsequently, additionally, nevertheless
-Phrases: "In conclusion", "It's important to note", "It's worth noting", "In today's", "In the realm of", "plays a crucial role", "shed light on", "a myriad of", "dive into", "It is essential"
-Punctuation: em dashes (—), double hyphens (--). Use commas or periods instead.`;
+Traits of your writing:
+- Concise. You cut filler and don't restate the obvious.
+- Wild sentence length variation. Long ones, then short. Fragments too.
+- Contractions: don't, it's, won't, they're, can't, shouldn't, wouldn't.
+- You start sentences with And, But, So, Or naturally.
+- You repeat words instead of hunting for synonyms every time.
+- You hedge: "probably", "I think", "seems like", "sort of", "basically", "pretty much".
+- No fancy transitions. Never "Furthermore" or "Moreover" or "Additionally."
+- Abrupt endings. You stop when the point's made. No wrap-up paragraph.
+- You drop subjects sometimes: "Works well" not "It works well."
 
-const TONE_ADDITIONS: Record<string, string> = {
+Words you never use: delve, crucial, pivotal, moreover, furthermore, comprehensive, robust, leverage, utilize, facilitate, streamline, foster, encompasses, embark, multifaceted, holistic, paradigm, navigate, cutting-edge, realm, landscape, tapestry, nuanced, captivating, commendable, intricate, notably, bustling, undeniable, henceforth, thereby, consequently, subsequently, additionally, nevertheless.`;
+
+// ── In-context examples per tone ──────────────────────────────────────
+// These demonstrate the transformation pattern. The model learns
+// implicitly from examples rather than from explicit rules.
+const TONE_SYSTEMS: Record<string, string> = {
   casual: `
-TONE: Write like you're explaining this to a friend over coffee. Informal. Relaxed. Use "pretty much", "kinda", "honestly", "I mean", "the thing is", "like" as filler. It's okay to ramble slightly. Use "stuff" and "things" sometimes instead of being specific. Mix in a question or two.`,
+Here's how you rewrite text:
+
+BEFORE: The proliferation of social media platforms has fundamentally altered interpersonal communication patterns. These platforms have created unprecedented opportunities for connection while simultaneously introducing challenges related to privacy, misinformation, and mental health implications.
+AFTER: Social media pretty much changed how everyone talks to each other. You can connect with anyone now which is cool but there's a downside. Privacy's a mess, misinformation is everywhere, and honestly it's not great for your head. Sort of a trade-off nobody really signed up for.
+
+BEFORE: Regular physical exercise has been consistently demonstrated to provide numerous benefits for both physical and mental well-being. Research indicates that moderate activity reduces cardiovascular disease rates while improving mood regulation and cognitive function.
+AFTER: Working out helps. Not exactly groundbreaking news but the research keeps backing it up. Less heart problems, better mood, thinking gets sharper. Even just walking counts. Doesn't have to be some intense gym session.
+
+You write casually, like explaining something to a friend. You use "pretty much", "honestly", "kinda", "I mean", "the thing is". You ask questions sometimes.`,
 
   professional: `
-TONE: Write like a senior colleague drafting an email or short report. Confident but not stiff. Use "I think", "in my experience", "what we've found is" when it fits. Plain English, not corporate speak. Ok to have a slightly informal moment mixed with formal statements.`,
+Here's how you rewrite text:
+
+BEFORE: The implementation of agile methodology has transformed project management practices across various industries. Organizations that adopt these frameworks tend to achieve higher levels of team productivity and client satisfaction while maintaining flexibility in their development processes.
+AFTER: Agile has changed how teams run projects and the results speak for themselves. Companies using it tend to see better productivity and happier clients. The flexibility is probably what makes it work, you can adjust as you go rather than being locked into a rigid plan from the start.
+
+BEFORE: Data-driven decision making enables organizations to base their strategic choices on empirical evidence rather than intuition alone. This approach has proven particularly valuable in optimizing campaign performance and identifying emerging trends.
+AFTER: Basing decisions on data instead of gut feeling is paying off for a lot of companies. Marketing gets more targeted, you spot trends earlier, and teams are expected to back up recommendations with actual numbers now. I think that shift in expectations is what's really driving adoption.
+
+You write professionally but naturally. Not stiff. You use "I think", "in my experience", "what we've seen is" when appropriate. Plain English with some informality mixed in.`,
 
   academic: `
-TONE: Write like a real university student working on an essay at 11pm. Use hedging: "seems to suggest", "it could be argued", "arguably", "this might indicate", "there's reason to think". Be slightly wordy in places (real students are). Mix passive and active voice loosely. Don't define obvious terms. Some paragraphs can be dense, others simple.`,
+Here's how you rewrite text:
+
+BEFORE: The relationship between socioeconomic status and educational outcomes has been extensively documented in sociological literature. Research demonstrates that students from lower-income backgrounds face significant barriers to academic achievement, including limited access to resources and reduced parental involvement in educational activities.
+AFTER: There's a well-documented link between socioeconomic status and academic performance. Kids from lower-income families face real barriers, limited resources, parents who can't always be involved. The gap persists despite intervention efforts. It probably comes down to structural factors that policy alone can't fix.
+
+BEFORE: Cognitive behavioral therapy has emerged as one of the most effective evidence-based treatments for anxiety disorders. Meta-analyses indicate that CBT produces lasting improvements in symptom management, with therapeutic effects often persisting beyond the active treatment period.
+AFTER: CBT keeps coming up as one of the better anxiety treatments in the literature. Meta-analyses are pretty consistent on this. What's interesting is effects seem to last after treatment ends, which isn't always the case with other approaches. Still some debate about which component does the heavy lifting though.
+
+You write academically but like a real student, not a textbook. You hedge: "seems to suggest", "probably", "arguably", "there's reason to think". Slightly wordy in places. Mix of passive and active voice.`,
 
   creative: `
-TONE: Write with a distinct personal voice. Use unexpected word choices, concrete imagery, and occasional humor or irony. Vary rhythm deliberately. Some sentences should flow, others should stop short. Use comparisons that feel personal, not generic. Let the writing breathe.`,
+Here's how you rewrite text:
+
+BEFORE: The city of Paris continues to attract millions of visitors annually with its iconic landmarks, world-class museums, and renowned culinary traditions. The combination of historical architecture and contemporary cultural offerings creates an atmosphere that distinguishes it from other European destinations.
+AFTER: Paris pulls you in and doesn't let go. The architecture mostly. Buildings that have watched centuries pass and still look better than anything new. The Louvre alone could eat up a week. And the food, that's an entirely separate reason to go. Other cities try but there's something here that can't be copied.
+
+BEFORE: The novel explores themes of isolation and identity through an unreliable narrator. The author employs fragmented prose and non-linear storytelling to mirror the protagonist's deteriorating psychological state.
+AFTER: The book works because you can't trust the narrator. Everything filters through someone who's clearly falling apart and the writing reflects that. Sentences break off. Timelines jump. You're putting the story together the same way the protagonist tries to put themselves together. Disorienting on purpose.
+
+You write with a personal voice. Concrete details over abstractions. Unexpected word choices. Some sentences flow, others stop short. Imagery feels personal, not generic.`,
 };
 
-function buildPrompt(tone: string, text: string): string {
-  const toneAddition = TONE_ADDITIONS[tone] || "";
-  return `${toneAddition}
+function buildSystemMessage(tone: string): string {
+  return HUMAN_FEATURES + "\n" + (TONE_SYSTEMS[tone] || TONE_SYSTEMS.casual);
+}
 
-Rewrite the following text completely in your own words. Keep the same meaning and information, but make it sound like YOU wrote it from scratch.
+function buildUserPrompt(text: string): string {
+  return `Read the text below. Then rewrite it in your own words keeping the same meaning. Write as if these are your own ideas.
 
-TEXT TO REWRITE:
+TEXT:
 """
 ${text}
 """
 
-Remember: passive voice in ~30-40% of sentences, wild sentence length variation, contractions, sentence fragments, no banned words, no neat conclusion. Output ONLY the rewritten text.`;
+Write ONLY the rewritten text.`;
 }
 
-// ── Post-processing ───────────────────────────────────────────────────
+// ── Post-processing pipeline ──────────────────────────────────────────
 const BANNED_WORD_MAP: Record<string, string> = {
   "delve": "look into", "crucial": "important", "pivotal": "key",
   "moreover": "plus", "furthermore": "and", "landscape": "space",
@@ -73,6 +110,36 @@ const BANNED_REGEXES = Object.keys(BANNED_WORD_MAP).map(
   (w) => ({ pattern: new RegExp(`\\b${w}\\b`, "gi"), replacement: BANNED_WORD_MAP[w] })
 );
 
+// Force contractions where the model wrote them out
+const CONTRACTION_PAIRS: [string, string][] = [
+  ["do not", "don't"], ["does not", "doesn't"], ["did not", "didn't"],
+  ["cannot", "can't"], ["can not", "can't"], ["will not", "won't"],
+  ["would not", "wouldn't"], ["should not", "shouldn't"], ["could not", "couldn't"],
+  ["is not", "isn't"], ["are not", "aren't"], ["was not", "wasn't"],
+  ["were not", "weren't"], ["has not", "hasn't"], ["have not", "haven't"],
+  ["had not", "hadn't"], ["it is", "it's"], ["that is", "that's"],
+  ["there is", "there's"], ["here is", "here's"], ["what is", "what's"],
+  ["I am", "I'm"], ["I have", "I've"], ["I will", "I'll"], ["I would", "I'd"],
+  ["they are", "they're"], ["they have", "they've"], ["they would", "they'd"],
+  ["we are", "we're"], ["we have", "we've"], ["we would", "we'd"],
+  ["you are", "you're"], ["you have", "you've"], ["you would", "you'd"],
+];
+
+function enforceContractions(text: string): string {
+  let out = text;
+  for (const [full, contracted] of CONTRACTION_PAIRS) {
+    const re = new RegExp(`\\b${full}\\b`, "gi");
+    out = out.replace(re, (match) => {
+      // Preserve leading capitalization
+      if (match[0] >= "A" && match[0] <= "Z") {
+        return contracted.charAt(0).toUpperCase() + contracted.slice(1);
+      }
+      return contracted;
+    });
+  }
+  return out;
+}
+
 function postProcess(text: string): string {
   let out = text;
 
@@ -85,15 +152,26 @@ function postProcess(text: string): string {
     out = out.replace(pattern, replacement);
   }
 
+  // Force contractions
+  out = enforceContractions(out);
+
   // Strip AI opener patterns
   out = out.replace(/^In today'?s \w+ \w*,?\s*/i, "");
   out = out.replace(/^In the realm of \w+,?\s*/i, "");
-  out = out.replace(/It is (essential|important) (that |to )/gi, "");
 
-  // Strip phrases like "In conclusion, " at start of sentences
+  // Strip AI filler phrases
+  out = out.replace(/It is (essential|important) (that |to )/gi, "");
   out = out.replace(/In conclusion,?\s*/gi, "");
   out = out.replace(/It'?s (important|worth) to note (that )?/gi, "");
-  out = out.replace(/It'?s worth noting (that )?/gi, "");
+  out = out.replace(/It'?s worth (noting|mentioning) (that )?/gi, "");
+  out = out.replace(/\bIn order to\b/gi, "To");
+  out = out.replace(/\bDue to the fact that\b/gi, "Since");
+  out = out.replace(/\bAt the end of the day,?\s*/gi, "");
+  out = out.replace(/\bIt goes without saying (that )?/gi, "");
+  out = out.replace(/\bplays a (crucial|vital|important|key) role/gi, "matters");
+  out = out.replace(/\ba myriad of\b/gi, "many");
+  out = out.replace(/\bshed light on\b/gi, "explain");
+  out = out.replace(/\bIn the realm of\b/gi, "In");
 
   // Clean double spaces and trim
   out = out.replace(/ {2,}/g, " ").trim();
@@ -101,7 +179,7 @@ function postProcess(text: string): string {
   return out;
 }
 
-// ── Model callers (single pass — two-pass adds more AI patterns) ──────
+// ── Model callers ─────────────────────────────────────────────────────
 
 async function callGemini(text: string, tone: string): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -110,12 +188,12 @@ async function callGemini(text: string, tone: string): Promise<string> {
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
-    systemInstruction: REWRITE_SYSTEM,
-    generationConfig: { temperature: 1.0, topP: 0.90, topK: 40 },
+    systemInstruction: buildSystemMessage(tone),
+    generationConfig: { temperature: 0.7, topP: 0.9, topK: 40 },
   });
 
   try {
-    const result = await model.generateContent(buildPrompt(tone, text));
+    const result = await model.generateContent(buildUserPrompt(text));
     return postProcess(result.response.text());
   } catch {
     throw new Error("MODEL_ERROR");
@@ -135,11 +213,11 @@ async function callGrok(text: string, tone: string): Promise<string> {
     body: JSON.stringify({
       model: "grok-4-1-fast-reasoning",
       messages: [
-        { role: "system", content: REWRITE_SYSTEM },
-        { role: "user", content: buildPrompt(tone, text) },
+        { role: "system", content: buildSystemMessage(tone) },
+        { role: "user", content: buildUserPrompt(text) },
       ],
-      temperature: 1.0,
-      top_p: 0.88,
+      temperature: 0.7,
+      top_p: 0.9,
     }),
   });
 
@@ -167,11 +245,11 @@ async function callKimi(text: string, tone: string): Promise<string> {
       body: JSON.stringify({
         model: "kimi-k2.5",
         messages: [
-          { role: "system", content: REWRITE_SYSTEM },
-          { role: "user", content: buildPrompt(tone, text) },
+          { role: "system", content: buildSystemMessage(tone) },
+          { role: "user", content: buildUserPrompt(text) },
         ],
-        temperature: 1.0,
-        top_p: 0.88,
+        temperature: 0.7,
+        top_p: 0.9,
       }),
     });
 
@@ -207,7 +285,7 @@ export const humanize = action({
       throw new Error("Text is required");
     }
 
-    if (!TONE_ADDITIONS[tone]) {
+    if (!TONE_SYSTEMS[tone]) {
       throw new Error("Valid tone is required (casual, professional, academic, creative)");
     }
 
