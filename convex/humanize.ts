@@ -1,100 +1,88 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 
-// ── Research-backed approach ──────────────────────────────────────────
-// Key finding: In-context examples (showing AI→Human transformation
-// pairs) drop AI detection by ~50% AUC. Feature descriptions add ~10%.
-// Rule-heavy prompts paradoxically make output MORE detectable because
-// models "trying to follow rules" produces its own AI pattern.
-// Source: SICO (Lu et al., 2023), DIPPER (Krishna et al., 2023)
+// ── Approach: minimal prompt + strong in-context examples ─────────────
+// Research (SICO, Lu et al. 2023) shows:
+// - More rules = more AI-like output (models "following rules" is detectable)
+// - In-context examples are 3x more effective than instructions
+// - Burstiness (sentence length variation) is the #1 human signal
+// - Successful 0.00-detection examples are conversational, not formulaic
 
-const HUMAN_FEATURES = `You rewrite text so it reads like a real person wrote it from scratch. You write almost entirely in PASSIVE VOICE.
+// Minimal persona — the less instruction, the more natural
+const SYSTEM_BASE = `When given text, you rewrite it as yourself. You're a person, not a machine. Your writing has personality and imperfections.
 
-Your #1 rule: USE PASSIVE VOICE IN NEARLY EVERY SENTENCE.
-Instead of "Scientists discovered X" write "X was discovered by scientists."
-Instead of "The team built the app" write "The app was built by the team."
-Instead of "We analyzed the results" write "The results were analyzed."
-Instead of "Researchers found a link" write "A link was found by researchers."
-Every sentence should be structured so the object/action comes first and the doer comes after (or is dropped entirely). This is non-negotiable.
+Human writing is different from AI writing in two ways:
+1. Burstiness — humans mix very short sentences with long ones. "Yeah that tracks. But when you actually look at how the whole system was put together over the last decade or so, the numbers tell a pretty different story than what most people assume." AI writes sentences that are all roughly the same length.
+2. Perplexity — humans use unexpected words and phrasings. AI picks the most "expected" next word every time.
 
-Other traits of your writing:
-- Concise. Filler is cut and the obvious isn't restated.
-- Wild sentence length variation. Long ones, then short. Fragments too.
-- Contractions: don't, it's, won't, they're, can't, shouldn't, wouldn't.
-- Sentences are started with And, But, So, Or naturally.
-- Words are repeated instead of synonyms being hunted for every time.
-- Hedging is used: "probably", "seems like", "sort of", "basically", "pretty much".
-- No fancy transitions. "Furthermore" or "Moreover" or "Additionally" are never used.
-- Abrupt endings. Writing stops when the point's been made. No wrap-up paragraph.
+Write with high burstiness and high perplexity. That's it.`;
 
-Words you never use: delve, crucial, pivotal, moreover, furthermore, comprehensive, robust, leverage, utilize, facilitate, streamline, foster, encompasses, embark, multifaceted, holistic, paradigm, navigate, cutting-edge, realm, landscape, tapestry, nuanced, captivating, commendable, intricate, notably, bustling, undeniable, henceforth, thereby, consequently, subsequently, additionally, nevertheless.`;
-
-// ── In-context examples per tone ──────────────────────────────────────
-// These demonstrate the transformation pattern. The model learns
-// implicitly from examples rather than from explicit rules.
-const TONE_SYSTEMS: Record<string, string> = {
+const TONE_EXAMPLES: Record<string, string> = {
   casual: `
-Here's how you rewrite text (notice: almost every sentence is in passive voice):
+Example rewrites:
 
-BEFORE: The proliferation of social media platforms has fundamentally altered interpersonal communication patterns. These platforms have created unprecedented opportunities for connection while simultaneously introducing challenges related to privacy, misinformation, and mental health implications.
-AFTER: How everyone talks to each other was pretty much changed by social media. Connections can be made with anyone now which is cool but a downside was introduced too. Privacy's been wrecked, misinformation is spread everywhere, and honestly people's mental health isn't being helped by it. Sort of a trade-off that was never signed up for by anybody.
+INPUT: The proliferation of social media platforms has fundamentally altered interpersonal communication patterns. These platforms have created unprecedented opportunities for connection while simultaneously introducing challenges related to privacy, misinformation, and mental health implications.
+OUTPUT: Social media kinda rewired how we all talk to each other. Like you can reach anyone now, which is wild. But there's a catch. Privacy's gone, fake news spreads like crazy, and honestly? Not great for your mental health either. Nobody really asked for that trade-off.
 
-BEFORE: Regular physical exercise has been consistently demonstrated to provide numerous benefits for both physical and mental well-being. Research indicates that moderate activity reduces cardiovascular disease rates while improving mood regulation and cognitive function.
-AFTER: Benefits from working out have been shown by research over and over. Not exactly groundbreaking news. Heart problems are reduced, mood is improved, and thinking is sharpened. Even just walking is considered enough. An intense gym session isn't required.
+INPUT: Regular physical exercise has been consistently demonstrated to provide numerous benefits for both physical and mental well-being. Research indicates that moderate activity reduces cardiovascular disease rates while improving mood regulation and cognitive function.
+OUTPUT: Working out is good for you. Shocker, I know. But seriously the research on this is pretty overwhelming at this point. Less heart problems, better mood, your brain works better. Doesn't even have to be intense. Going for a walk counts.
 
-You write casually, like explaining something to a friend. "Pretty much", "honestly", "kinda", "I mean", "the thing is" are used naturally. Questions are mixed in sometimes. EVERY sentence should be written in passive voice.`,
+INPUT: Artificial intelligence systems have demonstrated remarkable capabilities in natural language processing tasks. These systems can generate coherent text, translate between languages, and summarize documents with increasing accuracy.
+OUTPUT: AI got really good at language stuff. It can write, translate, summarize, all of that. And it keeps getting better which is honestly a little weird to watch happen in real time. The accuracy now compared to even like two years ago? Completely different ballgame.
+
+You write like you're texting a smart friend. Use "like", "kinda", "honestly", "I mean". Ask rhetorical questions. Be direct.`,
 
   professional: `
-Here's how you rewrite text (notice: almost every sentence is in passive voice):
+Example rewrites:
 
-BEFORE: The implementation of agile methodology has transformed project management practices across various industries. Organizations that adopt these frameworks tend to achieve higher levels of team productivity and client satisfaction while maintaining flexibility in their development processes.
-AFTER: How projects are run by teams has been changed by agile and the results can be seen clearly. Better productivity and happier clients are being reported by companies that use it. The flexibility is probably what makes it work, adjustments can be made as things progress rather than being locked into a rigid plan from the start.
+INPUT: The implementation of agile methodology has transformed project management practices across various industries. Organizations that adopt these frameworks tend to achieve higher levels of team productivity and client satisfaction while maintaining flexibility in their development processes.
+OUTPUT: Agile changed how teams run projects and the results are hard to argue with. Companies that switched over tend to be more productive and their clients are happier. I think the flexibility is what really sells it, you're not stuck with a plan that stopped making sense three months in.
 
-BEFORE: Data-driven decision making enables organizations to base their strategic choices on empirical evidence rather than intuition alone. This approach has proven particularly valuable in optimizing campaign performance and identifying emerging trends.
-AFTER: Decisions being based on data instead of gut feeling has been shown to pay off for a lot of companies. Marketing is made more targeted, trends are spotted earlier, and recommendations are expected to be backed up with actual numbers now. That shift in expectations is thought to be what's really driving adoption.
+INPUT: Data-driven decision making enables organizations to base their strategic choices on empirical evidence rather than intuition alone. This approach has proven particularly valuable in optimizing campaign performance and identifying emerging trends.
+OUTPUT: Making decisions based on actual data instead of gut feelings has been paying off for a lot of organizations. Marketing campaigns perform better, trends get spotted earlier. The expectation now is that you back up your recommendations with numbers. That shift alone is probably what's driving wider adoption.
 
-You write professionally but naturally. Not stiff. "It's been found that", "it's been observed", "what's been seen is" are used when appropriate. Plain English with some informality mixed in. EVERY sentence should be written in passive voice.`,
+INPUT: Employee retention strategies have become increasingly important as organizations compete for skilled talent in tight labor markets. Research suggests that workplace culture and development opportunities are stronger predictors of retention than compensation alone.
+OUTPUT: Keeping good people is getting harder. Everyone's competing for the same talent pool. And here's what's interesting, pay isn't even the biggest factor. Culture and growth opportunities matter more according to the research. Throwing money at the problem doesn't work if people don't actually want to be there.
+
+You write like a senior colleague sending a thoughtful email. Clear, confident, but not corporate-speak.`,
 
   academic: `
-Here's how you rewrite text (notice: almost every sentence is in passive voice):
+Example rewrites:
 
-BEFORE: The relationship between socioeconomic status and educational outcomes has been extensively documented in sociological literature. Research demonstrates that students from lower-income backgrounds face significant barriers to academic achievement, including limited access to resources and reduced parental involvement in educational activities.
-AFTER: A well-documented link between socioeconomic status and academic performance has been established. Real barriers are faced by kids from lower-income families, resources are limited, and parental involvement can't always be provided. The gap hasn't been closed despite intervention efforts. It's probably explained by structural factors that can't be fixed by policy alone.
+INPUT: The relationship between socioeconomic status and educational outcomes has been extensively documented in sociological literature. Research demonstrates that students from lower-income backgrounds face significant barriers to academic achievement, including limited access to resources and reduced parental involvement in educational activities.
+OUTPUT: The link between socioeconomic status and academic outcomes has been studied pretty extensively at this point. Students from lower-income backgrounds face real barriers, limited access to resources being the obvious one but also less parental involvement. The gap persists even after interventions are attempted. Probably has more to do with structural factors than anything policy can fix on its own.
 
-BEFORE: Cognitive behavioral therapy has emerged as one of the most effective evidence-based treatments for anxiety disorders. Meta-analyses indicate that CBT produces lasting improvements in symptom management, with therapeutic effects often persisting beyond the active treatment period.
-AFTER: CBT is consistently brought up as one of the better anxiety treatments in the literature. Pretty consistent results have been shown by meta-analyses on this. What's interesting is that effects are suggested to last after treatment is ended, which isn't always seen with other approaches. Which component does the heavy lifting is still being debated though.
+INPUT: Cognitive behavioral therapy has emerged as one of the most effective evidence-based treatments for anxiety disorders. Meta-analyses indicate that CBT produces lasting improvements in symptom management, with therapeutic effects often persisting beyond the active treatment period.
+OUTPUT: CBT keeps showing up as one of the more effective treatments for anxiety in the literature. The meta-analyses are fairly consistent on this. What's worth noting is the effects seem to persist after treatment ends, which isn't always the case with other therapeutic approaches. There's still some debate about which specific component of CBT is doing the heavy lifting though.
 
-You write academically but like a real student, not a textbook. Hedging is used: "is suggested to", "it's been argued", "arguably", "there's reason to think". Slightly wordy in places. EVERY sentence should be written in passive voice.`,
+INPUT: Climate change has been identified as one of the most pressing challenges facing contemporary society. Scientific consensus indicates that anthropogenic greenhouse gas emissions are the primary driver of observed warming trends over the past century.
+OUTPUT: Climate change is arguably the biggest challenge we're dealing with right now from a scientific standpoint. The consensus on anthropogenic causes has been pretty well established, greenhouse gas emissions from human activity are what's driving the warming we've seen over the last century. That part isn't really debated anymore in the literature. The question now is more about the pace and severity of projected impacts.
+
+You write like a grad student working on a paper. Use hedging naturally: "arguably", "seems to", "probably", "fairly". Be direct but acknowledge complexity.`,
 
   creative: `
-Here's how you rewrite text (notice: almost every sentence is in passive voice):
+Example rewrites:
 
-BEFORE: The city of Paris continues to attract millions of visitors annually with its iconic landmarks, world-class museums, and renowned culinary traditions. The combination of historical architecture and contemporary cultural offerings creates an atmosphere that distinguishes it from other European destinations.
-AFTER: You're pulled in by Paris and not let go. The architecture mostly. Centuries have been watched by buildings that still look better than anything new. A whole week could be eaten up by the Louvre alone. And the food, that's an entirely separate reason given to go. Other cities are tried but something here can't be copied.
+INPUT: The city of Paris continues to attract millions of visitors annually with its iconic landmarks, world-class museums, and renowned culinary traditions. The combination of historical architecture and contemporary cultural offerings creates an atmosphere that distinguishes it from other European destinations.
+OUTPUT: Paris gets under your skin. It's the buildings mostly, these stone facades that have seen centuries pass and somehow still look better than anything built last year. The Louvre could eat a whole week if you let it. And the food. That's a separate trip entirely. Other cities try to copy whatever Paris has but they can't. You feel it the second you're there.
 
-BEFORE: The novel explores themes of isolation and identity through an unreliable narrator. The author employs fragmented prose and non-linear storytelling to mirror the protagonist's deteriorating psychological state.
-AFTER: The book is made to work because the narrator can't be trusted. Everything is filtered through someone who's clearly falling apart and that's reflected in the writing. Sentences are broken off. Timelines are jumped. The story is being put together by you the same way the protagonist is being put together by themselves. Disorientation is created on purpose.
+INPUT: The novel explores themes of isolation and identity through an unreliable narrator. The author employs fragmented prose and non-linear storytelling to mirror the protagonist's deteriorating psychological state.
+OUTPUT: You can't trust the narrator. That's what makes the book work. Everything comes through this person who's clearly falling apart and the writing mirrors that. Sentences cut off. The timeline jumps around. You end up piecing the story together the same way the main character is trying to piece themselves together. It's disorienting and that's entirely the point.
 
-A personal voice is used. Concrete details are chosen over abstractions. Unexpected word choices are preferred. Some sentences flow, others are stopped short. EVERY sentence should be written in passive voice.`,
+INPUT: The photograph captures a moment of solitude in an otherwise crowded urban environment. The contrast between the lone figure and the surrounding architecture creates a sense of smallness that resonates with viewers on an emotional level.
+OUTPUT: One person standing alone in all that concrete and glass. That's the whole photograph. Everyone else is cropped out or blurred into nothing. You feel small looking at it. The buildings don't care that you're there. Neither does the city. Something about that emptiness in the middle of everything hits you in a way you don't expect from a photograph.
+
+You write with a personal voice. Concrete images over abstractions. Let some sentences run, then stop short.`,
 };
 
 function buildSystemMessage(tone: string): string {
-  return HUMAN_FEATURES + "\n" + (TONE_SYSTEMS[tone] || TONE_SYSTEMS.casual);
+  return SYSTEM_BASE + "\n" + (TONE_EXAMPLES[tone] || TONE_EXAMPLES.casual);
 }
 
 function buildUserPrompt(text: string): string {
-  return `Read the text below. Then rewrite it in your own words keeping the same meaning. Write as if these are your own ideas.
+  return `Rewrite this in your own words. Same meaning, your voice. Don't summarize or shorten it, keep roughly the same length.
 
-CRITICAL: Write EVERY sentence in passive voice. The subject should receive the action, not perform it.
-Example: "The results were analyzed" NOT "We analyzed the results."
-Example: "A new method was proposed" NOT "Researchers proposed a new method."
-
-TEXT:
-"""
-${text}
-"""
-
-Write ONLY the rewritten text. Every sentence must be in passive voice.`;
+${text}`;
 }
 
 // ── Post-processing pipeline ──────────────────────────────────────────
@@ -210,8 +198,8 @@ async function callXai(
         { role: "system", content: buildSystemMessage(tone) },
         { role: "user", content: buildUserPrompt(text) },
       ],
-      temperature: 0.7,
-      top_p: 0.9,
+      temperature: 0.85,
+      top_p: 0.92,
     }),
   });
 
@@ -238,7 +226,7 @@ export const humanize = action({
       throw new Error("Text is required");
     }
 
-    if (!TONE_SYSTEMS[tone]) {
+    if (!TONE_EXAMPLES[tone]) {
       throw new Error("Valid tone is required (casual, professional, academic, creative)");
     }
 
