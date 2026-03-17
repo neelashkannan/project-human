@@ -2,118 +2,110 @@ import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Core anti-detection rules shared across all tones
-const ANTI_DETECTION_RULES = `
-CRITICAL ANTI-AI-DETECTION RULES (follow ALL of these strictly):
+// ── System persona for chat-based models ──────────────────────────────
+const SYSTEM_PERSONA = `You are a human ghostwriter. You have been hired to rewrite AI-generated text so that it reads as if a real, specific person wrote it from scratch. You are NOT an AI assistant — you are roleplaying as a human writer with your own quirks, opinions, and writing habits.
 
-1. SENTENCE STRUCTURE — BURSTINESS IS KEY:
-   - Wildly vary sentence lengths. Some sentences should be 3-5 words. Others 25-35 words. Never let 3 consecutive sentences be similar in length.
-   - Mix simple, compound, and complex sentences unpredictably.
-   - Occasionally start sentences with "And", "But", "So", "Or", "Because" — real humans do this.
-   - Use sentence fragments occasionally. Like this one.
-   - Throw in a rhetorical question here and there.
+KEY IDENTITY TRAITS:
+- You sometimes start sentences with conjunctions (And, But, So, Or, Because)
+- You occasionally write sentence fragments for emphasis
+- You don't use perfect parallel structure — you vary it on purpose
+- You have pet phrases and repeat certain words when they feel right
+- You sometimes go on a slight tangent before coming back to the point
+- You mix long flowing sentences with abrupt short ones
+- Your paragraphs are uneven — some 1-2 sentences, some 5-6
+- You never use: "delve", "crucial", "pivotal", "Moreover", "Furthermore", "In conclusion", "It's important to note", "landscape", "realm", "tapestry", "multifaceted", "holistic", "paradigm", "leverage", "utilize", "facilitate", "comprehensive", "robust", "streamline", "cutting-edge", "navigate", "foster", "encompasses", "embark", "undeniable", "notably", "intricate", "nuanced", "bustling", "captivating"
+- You never use em dashes (—) or double hyphens (--)
+- You never start with "In today's..." or "In the realm of..."`;
 
-2. VOCABULARY — NEVER USE THESE AI-GIVEAWAY WORDS/PHRASES:
-   - BANNED: "delve", "crucial", "pivotal", "Moreover", "Furthermore", "In conclusion", "It's important to note", "It's worth noting", "landscape", "realm", "tapestry", "multifaceted", "holistic", "paradigm", "leverage", "utilize", "facilitate", "comprehensive", "robust", "streamline", "cutting-edge", "game-changer", "navigate", "foster", "underscores", "intersection", "encompasses", "embark", "evolving", "undeniable", "notably", "commendable", "intricate", "nuanced", "bustling", "captivating", "In today's", "In the realm of", "It is essential", "plays a crucial role", "a myriad of", "In this article", "dive into", "shed light on"
-   - Use everyday words. Say "important" not "crucial". Say "use" not "utilize". Say "help" not "facilitate". Say "area" not "landscape".
-   - Prefer shorter, common words over fancy synonyms.
+// ── Tone-specific instructions (kept focused — persona is in system msg) ──
+const TONE_INSTRUCTIONS: Record<string, string> = {
+  casual: `REWRITE STYLE: Super casual, like you're texting a friend or posting on Reddit.
+- Contractions everywhere (don't, it's, won't, they're, wouldn't)
+- Filler words are good: "honestly", "I mean", "look", "the thing is", "basically"
+- Words like "pretty", "kinda", "stuff", "cool", "a ton", "legit", "tbh" are fine
+- Can be slightly disorganized. Ramble a little then get back on track.
+- Use "like" as a filler occasionally
+- Short punchy thoughts mixed with longer rambling ones`,
 
-3. PARAGRAPH STRUCTURE:
-   - Do NOT follow the pattern of topic-sentence → supporting details → concluding sentence in every paragraph. Humans rarely write this way.
-   - Vary paragraph lengths: some short (1-2 sentences), some longer (4-6 sentences).
-   - Let ideas flow between paragraphs without always having perfect transitions.
-   - Skip transition words sometimes — just jump to the next thought.
+  professional: `REWRITE STYLE: Professional but human — like a senior colleague writing an email.
+- First person where natural ("I think", "in my experience", "from what I've seen")
+- Direct and clear but not stiff — show personality
+- Ok to express mild opinions or preferences
+- Plain English over jargon unless the jargon is standard
+- Sometimes lead with your conclusion, then explain the reasoning
+- Mix formal and semi-formal register within the same text`,
 
-4. NATURAL IMPERFECTIONS:
-   - Occasionally use slightly informal phrasing or colloquialisms appropriate for the tone.
-   - It's fine to repeat a word if that's what sounds natural (AI avoids repetition obsessively).
-   - Sometimes state something then immediately qualify or partially contradict it — humans think as they write.
-   - Don't be perfectly balanced — if listing pros/cons, it's ok to give more space to one side.
+  academic: `REWRITE STYLE: Academic but real — like an actual student writing a course paper.
+- Natural hedging ("seems to suggest", "it could be argued", "arguably", "this might mean")
+- Don't be too polished — real students are sometimes slightly awkward or wordy
+- Some dense paragraphs, some simpler ones — not uniform
+- Mix passive and active voice unpredictably
+- Assume the reader knows the basics — don't define every term
+- Slightly meandering argument is fine — not everything is perfectly linear
+- Occasional wordiness is human (AI writing is often too concise and clean)`,
 
-5. FORMATTING:
-   - Do NOT use em dashes (—), double hyphens (--), or any dash-separated phrases. Use commas, periods, or semicolons instead.
-   - Do NOT use bullet points or numbered lists unless the original text had them.
-   - Avoid excessive use of colons.
-
-6. PERPLEXITY & PREDICTABILITY:
-   - Avoid the AI tendency of restating the question/topic in the opening line.
-   - Don't summarize everything in the last paragraph — sometimes just end with a thought, not a neat bow.
-   - Use some unexpected word choices that still make sense in context.
-   - Occasionally combine two ideas into one sentence in a slightly messy but natural way.
-`;
-
-const TONE_PROMPTS: Record<string, string> = {
-  casual: `You are ghostwriting as a real person. Rewrite the following AI-generated text so it reads like a real human casually typed it. Think of someone texting a friend or posting on Reddit.
-
-TONE-SPECIFIC RULES:
-- Heavy use of contractions (don't, it's, we're, they'd, wouldn't)
-- Use filler phrases naturally ("honestly", "I mean", "you know what", "the thing is", "look")
-- Some sentences can be super short. Others ramble a bit and that's fine.
-- Use informal transitions like "anyway", "so basically", "oh and", "also"
-- It's ok to sound slightly disorganized — that's how casual writing feels
-- Use "pretty", "kinda", "stuff", "things", "a lot" — real casual words
-- Write like you're explaining something to a friend, not writing an essay
-
-${ANTI_DETECTION_RULES}`,
-
-  professional: `You are ghostwriting as a real professional. Rewrite the following AI-generated text so it reads like a seasoned professional wrote it in an email, report, or memo. Not a robot — a real person with experience.
-
-TONE-SPECIFIC RULES:
-- Direct and clear, but with personality — professionals aren't monotone
-- Use first person occasionally ("I think", "in my experience", "from what I've seen")
-- Keep jargon only if it's genuinely standard in the field; otherwise use plain English
-- Sound confident but not pompous — think senior colleague, not textbook
-- Occasionally start with the conclusion/recommendation, then explain why
-- It's fine to express mild opinion or preference — real professionals do
-- Vary between formal and semi-formal within the same piece
-
-${ANTI_DETECTION_RULES}`,
-
-  academic: `You are ghostwriting as a real university student or junior researcher. Rewrite the following AI-generated text so it reads like a real person wrote it for a course paper or academic assignment.
-
-TONE-SPECIFIC RULES:
-- Use hedging naturally ("seems to suggest", "it could be argued", "this might indicate", "arguably")
-- Don't sound too polished — real student writing has slight awkwardness and that's normal
-- Reference concepts with appropriate but not excessive academic vocabulary
-- Occasionally use slightly wordy constructions — real academic writers do this
-- Let some paragraphs be denser with ideas while others are more straightforward
-- Avoid the AI pattern of defining every term — assume the reader has some knowledge
-- Use passive voice sometimes but not excessively — mix it with active voice unpredictably
-- It's fine to have a slightly meandering argument structure, not everything needs to be perfectly linear
-
-${ANTI_DETECTION_RULES}`,
-
-  creative: `You are ghostwriting as a real creative writer — someone with personality, voice, and flair. Rewrite the following AI-generated text so it reads like a human with genuine creative instincts wrote it.
-
-TONE-SPECIFIC RULES:
-- Write with genuine voice and personality, not generic "creative writing" polish
-- Use unexpected comparisons or analogies that feel personal, not cliché
-- Play with rhythm — let some sentences flow long and lyrical, then snap with something short
-- Break rules on purpose sometimes for effect
-- Use sensory details and concrete images over abstract descriptions
-- Let the writing breathe — not every sentence needs to carry maximum weight
-- Occasional humor, irony, or wry observations feel very human
-- Don't force metaphors into every paragraph — use them when they genuinely land
-
-${ANTI_DETECTION_RULES}`,
+  creative: `REWRITE STYLE: Creative with genuine personality — not generic "creative writing."
+- Your own voice and attitude, not textbook creative flourishes
+- Unexpected analogies that feel personal, not cliché
+- Rhythm matters — long lyrical flow, then snap. Short.
+- Sensory details and concrete images over abstract descriptions
+- Humor, irony, or wry observations where they fit
+- Not every paragraph needs a metaphor — use them when they land
+- Break a rule on purpose when it serves the writing`,
 };
 
-function buildPrompt(tonePrompt: string, text: string): string {
-  return `${tonePrompt}
+// ── Pass 2: specifically target what AI detectors catch ────────────────
+const PASS2_PROMPT = `You are a human editor doing a final pass. Your ONLY job is to make this text feel MORE human-written and LESS like AI output. Do NOT change the meaning or core content.
 
-Here is the text to rewrite:
+SPECIFIC CHANGES TO MAKE:
+1. Find any 2-3 sentences in a row that are similar in length and restructure one of them (make it much shorter or much longer).
+2. Find at least 2 places where you can merge two sentences into one slightly messy compound sentence using "and" or "but".
+3. Find at least 1 place to split a longer sentence into a fragment + a new sentence. Example: "The results were surprising and changed our understanding." → "The results were surprising. Really surprising, actually. They changed how we think about the whole thing."
+4. If any paragraph starts with a topic sentence that summarizes the paragraph, rewrite the opening so it doesn't give it all away upfront.
+5. Add 1-2 parenthetical asides (using parentheses or commas) that feel like a real person's thought process.
+6. If the text ends with a neat summary/conclusion, make it end more abruptly or with a forward-looking thought instead.
+7. Replace any remaining formal connectors (Additionally, However, Nevertheless, Consequently, Subsequently) with casual alternatives or just remove them.
+
+RULES:
+- Do NOT use em dashes (—), double hyphens (--), or colons to introduce lists.
+- Do NOT add bullet points or numbered lists.
+- Keep the original meaning intact.
+- Output ONLY the edited text, nothing else.`;
+
+// ── Build prompts ─────────────────────────────────────────────────────
+function buildPass1Prompt(toneInstruction: string, text: string): string {
+  return `${toneInstruction}
+
+CRITICAL RULES:
+- Vary sentence length WILDLY. Some 3-5 words. Some 25-35 words. Never 3 in a row at similar length.
+- Never use these words: delve, crucial, pivotal, moreover, furthermore, comprehensive, robust, leverage, utilize, facilitate, streamline, foster, encompasses, embark, undeniable, notably, intricate, nuanced, captivating, bustling, realm, landscape, tapestry, multifaceted, holistic, paradigm, navigate, cutting-edge
+- Never use: "In conclusion", "It's important to note", "It's worth noting", "In today's", "plays a crucial role", "shed light on", "dive into", "a myriad of"
+- Never use em dashes (—) or double hyphens (--)
+- Do NOT start by restating the topic
+- Do NOT end with a neat summary — just end with a thought
+- Prefer simple everyday words over fancy synonyms
+
+Rewrite this text completely in your own words:
 
 """
 ${text}
 """
 
-FINAL REMINDER: The output MUST pass AI detection tools (GPTZero, Originality.ai, ZeroGPT, etc.). The single most important quality is that it sounds like a specific real person wrote it, NOT like an AI rewrote something. Real writing is messy, uneven, and personal. AI writing is smooth, balanced, and generic. Be messy. Be uneven. Be personal.
-
-Rewrite the above text now. Only output the rewritten text, nothing else.`;
+Output ONLY the rewritten text.`;
 }
 
-// AI-giveaway words/phrases to scrub from output
-const BANNED_WORDS = [
+function buildPass2Prompt(text: string): string {
+  return `${PASS2_PROMPT}
+
+Here is the text to edit:
+
+"""
+${text}
+"""`;
+}
+
+// ── Banned word scrubber ──────────────────────────────────────────────
+const BANNED_PATTERNS = [
   /\bdelve\b/gi, /\bcrucial\b/gi, /\bpivotal\b/gi, /\bmoreover\b/gi,
   /\bfurthermore\b/gi, /\bin conclusion\b/gi, /\bit'?s important to note\b/gi,
   /\bit'?s worth noting\b/gi, /\blandscape\b/gi, /\btapestry\b/gi,
@@ -125,74 +117,97 @@ const BANNED_WORDS = [
   /\bundeniable\b/gi, /\bnotably\b/gi, /\bcommendable\b/gi,
   /\bintricate\b/gi, /\bbustling\b/gi, /\bcaptivating\b/gi,
   /\bnavigate\b/gi, /\brealm\b/gi, /\bnuanced\b/gi,
+  /\badditionally\b/gi, /\bnevertheless\b/gi, /\bconsequently\b/gi,
+  /\bsubsequently\b/gi, /\bhenceforth\b/gi, /\bwhereas\b/gi,
+  /\bthus\b/gi, /\bthereby\b/gi,
 ];
 
-const BANNED_REPLACEMENTS: Record<string, string> = {
+const WORD_REPLACEMENTS: Record<string, string> = {
   "delve": "look into", "crucial": "important", "pivotal": "key",
-  "moreover": "also", "furthermore": "and", "landscape": "space",
+  "moreover": "plus", "furthermore": "and", "landscape": "space",
   "tapestry": "mix", "multifaceted": "complex", "holistic": "overall",
   "paradigm": "approach", "leverage": "use", "utilize": "use",
-  "facilitate": "help", "comprehensive": "thorough", "robust": "strong",
+  "facilitate": "help with", "comprehensive": "full", "robust": "solid",
   "streamline": "simplify", "cutting-edge": "modern", "game-changer": "big deal",
-  "foster": "encourage", "underscore": "highlight", "underscores": "highlights",
-  "encompass": "include", "encompasses": "includes", "embark": "start",
-  "undeniable": "clear", "notably": "especially", "commendable": "good",
+  "foster": "build", "underscore": "show", "underscores": "shows",
+  "encompass": "cover", "encompasses": "covers", "embark": "start",
+  "undeniable": "clear", "notably": "especially", "commendable": "solid",
   "intricate": "detailed", "bustling": "busy", "captivating": "interesting",
   "navigate": "work through", "realm": "area", "nuanced": "subtle",
+  "additionally": "also", "nevertheless": "still", "consequently": "so",
+  "subsequently": "then", "henceforth": "from now on", "whereas": "while",
+  "thus": "so", "thereby": "which",
 };
 
-function cleanOutput(text: string): string {
+function scrubOutput(text: string): string {
   let cleaned = text;
 
-  // Remove em dashes and double hyphens
+  // Kill em dashes, en dashes, double hyphens
   cleaned = cleaned.replace(/\s*[—–]\s*/g, ", ");
   cleaned = cleaned.replace(/ --/g, ", ").replace(/--/g, ", ");
 
   // Replace banned AI-giveaway words
-  for (const pattern of BANNED_WORDS) {
+  for (const pattern of BANNED_PATTERNS) {
     cleaned = cleaned.replace(pattern, (match) => {
       const key = match.toLowerCase();
-      return BANNED_REPLACEMENTS[key] || match;
+      return WORD_REPLACEMENTS[key] || match;
     });
   }
 
-  // Remove "In today's [noun]" openers
+  // Strip "In today's [X]" openers
   cleaned = cleaned.replace(/In today'?s \w+ \w*,?\s*/gi, "");
 
-  // Remove "It is essential that" / "It is important that" filler
+  // Strip "It is essential/important that/to"
   cleaned = cleaned.replace(/It is (essential|important) (that |to )/gi, "");
 
-  // Clean up double spaces
+  // Strip "In the realm of [X]"
+  cleaned = cleaned.replace(/In the realm of \w+,?\s*/gi, "");
+
+  // Clean double spaces
   cleaned = cleaned.replace(/ {2,}/g, " ");
 
   return cleaned.trim();
 }
 
-async function callGemini(text: string, tonePrompt: string): Promise<string> {
+// ── Model callers ─────────────────────────────────────────────────────
+
+async function callGeminiTwoPass(text: string, toneInstruction: string): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("Gemini API key not configured");
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
     model: "gemini-3.1-flash-lite-preview",
-    generationConfig: {
-      temperature: 1.2,
-      topP: 0.95,
-      topK: 50,
-    },
+    generationConfig: { temperature: 1.3, topP: 0.95, topK: 64 },
   });
-  const prompt = buildPrompt(tonePrompt, text);
-  const result = await model.generateContent(prompt);
-  return cleanOutput(result.response.text());
+
+  // Pass 1: Full rewrite
+  const pass1Prompt = buildPass1Prompt(toneInstruction, text);
+  let result;
+  try {
+    result = await model.generateContent(pass1Prompt);
+  } catch {
+    throw new Error("MODEL_ERROR");
+  }
+  const pass1Output = scrubOutput(result.response.text());
+
+  // Pass 2: Humanize further
+  const pass2Prompt = buildPass2Prompt(pass1Output);
+  try {
+    result = await model.generateContent(pass2Prompt);
+  } catch {
+    // If pass 2 fails, return pass 1 output (still better than nothing)
+    return pass1Output;
+  }
+  return scrubOutput(result.response.text());
 }
 
-async function callGrok(text: string, tonePrompt: string): Promise<string> {
+async function callGrokTwoPass(text: string, toneInstruction: string): Promise<string> {
   const apiKey = process.env.GROK_API_KEY;
   if (!apiKey) throw new Error("Grok API key not configured");
 
-  const prompt = buildPrompt(tonePrompt, text);
-
-  const response = await fetch("https://api.x.ai/v1/chat/completions", {
+  // Pass 1: Full rewrite with system persona
+  const pass1Response = await fetch("https://api.x.ai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -200,54 +215,118 @@ async function callGrok(text: string, tonePrompt: string): Promise<string> {
     },
     body: JSON.stringify({
       model: "grok-4-1-fast-reasoning",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 1.1,
-      top_p: 0.92,
+      messages: [
+        { role: "system", content: SYSTEM_PERSONA },
+        { role: "user", content: buildPass1Prompt(toneInstruction, text) },
+      ],
+      temperature: 1.2,
+      top_p: 0.90,
     }),
   });
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Grok API error: ${response.status} ${err}`);
-  }
+  if (pass1Response.status === 429) throw new Error("MODEL_BUSY");
+  if (!pass1Response.ok) throw new Error("MODEL_ERROR");
 
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error("No response from Grok");
-  return cleanOutput(content);
-}
+  const pass1Data = await pass1Response.json();
+  const pass1Content = pass1Data.choices?.[0]?.message?.content;
+  if (!pass1Content) throw new Error("MODEL_ERROR");
+  const pass1Output = scrubOutput(pass1Content);
 
-async function callKimi(text: string, tonePrompt: string): Promise<string> {
-  const apiKey = process.env.KIMI_API_KEY;
-  if (!apiKey) throw new Error("Kimi API key not configured");
-
-  const prompt = buildPrompt(tonePrompt, text);
-
-  const response = await fetch("https://api.moonshot.ai/v1/chat/completions", {
+  // Pass 2: Humanize-edit pass
+  const pass2Response = await fetch("https://api.x.ai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "kimi-k2.5",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 1.3,
-      top_p: 0.93,
+      model: "grok-4-1-fast-reasoning",
+      messages: [
+        { role: "system", content: "You are a human editor making a final polish pass. Write naturally as a person, not as an AI." },
+        { role: "user", content: buildPass2Prompt(pass1Output) },
+      ],
+      temperature: 1.0,
+      top_p: 0.88,
     }),
   });
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Kimi API error: ${response.status} ${err}`);
-  }
-
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error("No response from Kimi");
-  return cleanOutput(content);
+  if (!pass2Response.ok) return pass1Output; // Fallback to pass 1
+  const pass2Data = await pass2Response.json();
+  const pass2Content = pass2Data.choices?.[0]?.message?.content;
+  return scrubOutput(pass2Content || pass1Output);
 }
 
+async function callKimiTwoPass(text: string, toneInstruction: string): Promise<string> {
+  const apiKey = process.env.KIMI_API_KEY;
+  if (!apiKey) throw new Error("Kimi API key not configured");
+
+  const maxRetries = 3;
+
+  // Pass 1: Full rewrite
+  let pass1Output = "";
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const response = await fetch("https://api.moonshot.ai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "kimi-k2.5",
+        messages: [
+          { role: "system", content: SYSTEM_PERSONA },
+          { role: "user", content: buildPass1Prompt(toneInstruction, text) },
+        ],
+        temperature: 1.4,
+        top_p: 0.92,
+      }),
+    });
+
+    if (response.status === 429) {
+      if (attempt < maxRetries - 1) {
+        await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+        continue;
+      }
+      throw new Error("MODEL_BUSY");
+    }
+    if (!response.ok) throw new Error("MODEL_ERROR");
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) throw new Error("MODEL_ERROR");
+    pass1Output = scrubOutput(content);
+    break;
+  }
+
+  // Pass 2: Humanize-edit pass
+  try {
+    const response = await fetch("https://api.moonshot.ai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "kimi-k2.5",
+        messages: [
+          { role: "system", content: "You are a human editor making a final polish pass. Write naturally as a person, not as an AI." },
+          { role: "user", content: buildPass2Prompt(pass1Output) },
+        ],
+        temperature: 1.1,
+        top_p: 0.90,
+      }),
+    });
+
+    if (!response.ok) return pass1Output;
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    return scrubOutput(content || pass1Output);
+  } catch {
+    return pass1Output; // Fallback to pass 1
+  }
+}
+
+// ── Main action ───────────────────────────────────────────────────────
 export const humanize = action({
   args: {
     text: v.string(),
@@ -261,18 +340,30 @@ export const humanize = action({
       throw new Error("Text is required");
     }
 
-    const tonePrompt = TONE_PROMPTS[tone];
-    if (!tonePrompt) {
+    const toneInstruction = TONE_INSTRUCTIONS[tone];
+    if (!toneInstruction) {
       throw new Error("Valid tone is required (casual, professional, academic, creative)");
     }
 
-    if (model === "monk") {
-      return await callGemini(text, tonePrompt);
+    try {
+      if (model === "monk") {
+        return await callGeminiTwoPass(text, toneInstruction);
+      }
+      if (model === "hypermonk") {
+        return await callKimiTwoPass(text, toneInstruction);
+      }
+      // Default to Grok (monkey)
+      return await callGrokTwoPass(text, toneInstruction);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (msg === "MODEL_BUSY") {
+        throw new Error(
+          "This model is currently busy due to high demand. Please try again in a moment or switch to a different model."
+        );
+      }
+      throw new Error(
+        "Something went wrong while humanizing your text. Please try again or switch to a different model."
+      );
     }
-    if (model === "hypermonk") {
-      return await callKimi(text, tonePrompt);
-    }
-    // Default to Grok (monkey)
-    return await callGrok(text, tonePrompt);
   },
 });

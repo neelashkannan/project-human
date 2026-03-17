@@ -126,7 +126,16 @@ function FormUI({
         }
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to humanize text";
+      const raw = err instanceof Error ? err.message : "";
+      // Extract the user-friendly message from Convex error wrapping
+      let msg: string;
+      if (raw.includes("busy due to high demand")) {
+        msg = "This model is currently busy due to high demand. Please try again in a moment or switch to a different model.";
+      } else if (raw.includes("Something went wrong")) {
+        msg = "Something went wrong while humanizing your text. Please try again or switch to a different model.";
+      } else {
+        msg = "Failed to humanize text. Please try again or switch to a different model.";
+      }
       setError(msg);
       setShakeError(true);
       setTimeout(() => setShakeError(false), 500);
