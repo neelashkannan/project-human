@@ -3,68 +3,41 @@ export default function Logo({ size = 40 }: { size?: number }) {
     <svg
       width={size}
       height={size}
-      viewBox="0 0 120 120"
+      viewBox="0 0 128 128"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
       <defs>
-        <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#6366f1" />
-          <stop offset="100%" stopColor="#a78bfa" />
+        <linearGradient id="logoSurface" x1="18" y1="16" x2="106" y2="110" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#f5f7fb" />
+          <stop offset="1" stopColor="#d9e1eb" />
         </linearGradient>
-        <linearGradient id="logoGradSoft" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#a78bfa" />
-          <stop offset="100%" stopColor="#6366f1" />
+        <linearGradient id="logoInk" x1="35" y1="28" x2="99" y2="92" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#435062" />
+          <stop offset="1" stopColor="#738091" />
         </linearGradient>
       </defs>
 
-      <circle cx="60" cy="60" r="54" fill="#1c1c1f" />
-      <circle cx="60" cy="60" r="54" fill="none" stroke="#2a2a2d" strokeWidth="1.5" />
+      <rect x="12" y="12" width="104" height="104" rx="30" fill="url(#logoSurface)" />
+      <rect x="12" y="12" width="104" height="104" rx="30" stroke="#8a94a3" strokeWidth="2" />
 
-      <g>
-        {/* Head */}
-        <circle cx="60" cy="30" r="9" fill="url(#logoGrad)" />
+      <circle cx="49" cy="31" r="5.5" fill="url(#logoInk)" />
 
-        {/* Body flowing into J */}
-        <path
-          d="M60 39 C60 39 60 56 60 66 C60 80 51 87 40 87 C33 87 29 82 29 77"
-          stroke="url(#logoGrad)"
-          strokeWidth="4.5"
-          strokeLinecap="round"
-          fill="none"
-        />
+      <path
+        d="M49 43v26c0 11-7 18-18 18"
+        stroke="url(#logoInk)"
+        strokeWidth="8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
 
-        {/* Right arm */}
-        <path
-          d="M60 51 C66 49 76 45 84 49"
-          stroke="url(#logoGradSoft)"
-          strokeWidth="3"
-          strokeLinecap="round"
-          fill="none"
-          opacity="0.75"
-        />
-
-        {/* Left arm */}
-        <path
-          d="M60 53 C54 51 44 48 36 51"
-          stroke="url(#logoGradSoft)"
-          strokeWidth="3"
-          strokeLinecap="round"
-          fill="none"
-          opacity="0.75"
-        />
-
-        {/* Heartbeat pulse */}
-        <path
-          d="M22 97 L38 97 L43 89 L49 105 L54 86 L60 97 L98 97"
-          stroke="url(#logoGrad)"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill="none"
-          opacity="0.4"
-        />
-      </g>
+      <path
+        d="M73 85V44m0 20c0-8 6-13 14-13 8 0 14 6 14 16v18"
+        stroke="url(#logoInk)"
+        strokeWidth="8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

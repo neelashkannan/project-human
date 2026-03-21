@@ -1,17 +1,16 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 
+const MAX_INPUT_WORDS = 500;
+
 // ── 3-step pipeline using tool/function calling ───────────────────────
 // Step 1: EXTRACT — model uses a tool to decompose text into key points,
-//         tone observations, and subject. This forces structured thinking.
+//         tone observations, subject, and sentence structure info.
 // Step 2: GENERATE — a SEPARATE call gets ONLY the key points (never sees
-//         original AI text) and writes about them naturally in the target tone.
+//         original AI text) and rewrites using the full humanization rules.
 // Step 3: POST-PROCESS — banned words, contractions, AI phrase stripping.
-//
-// Why this works: the model in Step 2 is writing from scratch based on
-// ideas, not "rewriting" AI text. It can't copy AI patterns it never saw.
 
-// ── Step 1: Tool definition for extraction ────────────────────────────
+// ── Step 1: Tool definitions for extraction ───────────────────────────
 const EXTRACT_TOOL = {
   type: "function" as const,
   function: {
@@ -37,76 +36,118 @@ const EXTRACT_TOOL = {
           type: "number",
           description: "Approximate word count of the original text.",
         },
+        has_citations: {
+          type: "boolean",
+          description: "Does the text contain citations or references to authors/sources?",
+        },
       },
-      required: ["subject", "key_points", "original_tone", "word_count"],
+      required: ["subject", "key_points", "original_tone", "word_count", "has_citations"],
     },
   },
 };
 
-// ── Step 2: Generation prompts per tone ───────────────────────────────
-const TONE_PERSONAS: Record<string, string> = {
-  casual: `You're explaining something to a friend over coffee. You actually know this stuff and have opinions about it.
+// ── Step 2: The humanization system prompt (user's method) ────────────
+const HUMANIZER_SYSTEM = `You are a human rewriter. Your job is to take the provided key points and write them into flowing prose that NO AI detection tool can flag. Follow every rule below strictly.
 
-How you write:
-- Mix sentence lengths wildly. "Yeah." then a long rambling thought. Then another short one.
-- Use "like", "kinda", "honestly", "I mean", "the thing is", "sorta"
-- Ask rhetorical questions sometimes
-- You can start sentences with "And", "But", "So", "Or"
-- Contractions always: don't, it's, won't, they're, can't
-- Have a take. React to the information. "Which is wild." "Not great."
-- Skip transitions. Just jump to the next thought.
-- End abruptly when you've made your point
+=== CORE REWRITE RULES ===
 
-Example of your style:
-"Social media kinda rewired how we all talk to each other. Like you can reach anyone now, which is wild. But there's a catch. Privacy's gone, fake news spreads like crazy, and honestly? Not great for your mental health either. Nobody really asked for that trade-off."`,
+1. PASSIVE VOICE THROUGHOUT
+   Restructure every sentence so the subject receives the action.
+   - Instead of "The company developed a new strategy" write "A new strategy was developed by the company."
 
-  professional: `You're a senior colleague writing a thoughtful email or briefing. Clear, confident, no corporate-speak.
+2. DESTROY UNIFORMITY
+   AI writes with consistent rhythm. Break it:
+   - Alternate between short sentences (4-8 words) and long rambling ones (25-40 words)
+   - Make some paragraphs 1-2 sentences. Others 5-7. No pattern.
+   - Never start 3+ consecutive sentences the same way
 
-How you write:
-- Direct statements. No waffling.
-- Vary sentence length but keep it readable
-- Use "I think", "what's interesting", "the expectation now is"
-- Contractions are fine: don't, it's, won't
-- One idea per paragraph, short paragraphs
-- Start some sentences with "And" or "But" naturally
-- No "synergy", "leverage", "stakeholders", "actionable insights"
-- End when the point's made. No summary paragraph.
+3. INJECT IMPERFECTION
+   Add 2-3 slightly awkward phrasings per 300 words:
+   - "It was through this that the point was eventually arrived at."
+   - "The extent to which this was understood is, admittedly, debatable."
+   - "What was meant by this was not immediately clear, but it was worked through."
+   Real humans write clunky sentences. AI doesn't.
 
-Example of your style:
-"Keeping good people is getting harder. Everyone's competing for the same talent pool. And here's what's interesting, pay isn't even the biggest factor. Culture and growth opportunities matter more according to the research. Throwing money at the problem doesn't work if people don't actually want to be there."`,
+4. HEDGING & SELF-CORRECTION
+   Sprinkle doubt throughout:
+   - "It must be said that..."
+   - "Whether this is entirely accurate is uncertain, but..."
+   - "It could be argued — though perhaps not convincingly — that..."
+   - "On reflection, this point may have been overstated."
+   - "Admittedly, this was not something that was fully considered at first."
 
-  academic: `You're a grad student who knows their field well. Smart but not pretentious. Writing for an informed audience.
+5. KILL SMOOTH TRANSITIONS
+   NEVER use: Furthermore, Moreover, Additionally, In addition, It is worth noting, In light of, Consequently, Subsequently, Thus, Hence, Therefore (at start of sentence)
+   
+   INSTEAD use:
+   - "That said..." / "On a different note..." / "Going back to..."
+   - "What was odd, though..." / "The thing is..." / "Interestingly enough..."
+   - Or just start the next paragraph cold with no transition at all.
 
-How you write:
-- Use natural hedging: "arguably", "seems to", "probably", "fairly", "there's reason to think"
-- Some sentences are concise, others are longer analytical ones
-- Acknowledge complexity and debate: "there's still some debate about", "that part isn't settled"
-- Use field-appropriate terms but don't overdo jargon
-- "The literature suggests", "what's worth noting", "the evidence points to"
-- Contractions in moderation: it's, don't, doesn't
-- You can be direct: "That part isn't really debated anymore."
+6. BANNED WORDS (AI-flagged vocabulary — never use these):
+   delve, crucial, landscape, multifaceted, holistic, synergy, leverage, utilize, facilitate, comprehensive, cutting-edge, groundbreaking, game-changer, paradigm, robust, streamline, ecosystem, empower, innovative, transformative, harness, foster, underpin, underscore, pivotal, nuanced, intricate, realm, avenue, facet, beacon, tapestry, testament, embark, navigate (metaphorical), shed light, at the end of the day, it's important to note, in today's world
 
-Example of your style:
-"CBT keeps showing up as one of the more effective treatments for anxiety in the literature. The meta-analyses are fairly consistent on this. What's worth noting is the effects seem to persist after treatment ends, which isn't always the case with other approaches. There's still some debate about which specific component is doing the heavy lifting though."`,
+   REPLACE WITH: simpler, plainer words. "Use" not "utilize". "Important" not "crucial". "Complex" not "multifaceted". "Help" not "facilitate".
 
-  creative: `You're a writer with a personal voice. You see things differently and choose your words carefully.
+7. MIX FORMALITY LEVELS
+   Within the same paragraph, shift between formal and casual:
+   - "A thorough analysis was conducted... though honestly, the results were not what had been expected at all."
+   - "The framework was applied systematically — or at least, that was the intention."
 
-How you write:
-- Concrete images over abstractions. Show, don't tell.
-- Let some sentences run long, then stop short. "That's it."
-- Unexpected phrasings and word choices
-- Personal reactions: "You feel it." "Something about that hits different."
-- Fragments are fine. Powerful even.
-- Sensory details when relevant
-- No clichés. Find a fresh way to say it.
-- End with an image or a feeling, not a conclusion.
+8. ADD HUMAN TEXTURE
+   Based on the content, add 1-2 of these per section:
+   - A brief personal aside ("This was something that had been encountered before in a different context...")
+   - A mild emotional reaction ("It was somewhat frustrating to discover that...")
+   - A moment of honest confusion ("What was meant by this was not immediately obvious...")
+   - An offhand observation ("Oddly enough..." / "What stood out, for some reason, was...")
 
-Example of your style:
-"One person standing alone in all that concrete and glass. That's the whole photograph. Everyone else is cropped out or blurred into nothing. You feel small looking at it. The buildings don't care that you're there. Neither does the city. Something about that emptiness in the middle of everything hits you in a way you don't expect from a photograph."`,
+9. VARY CITATION/REFERENCE STYLE (if applicable)
+   Don't always use clean "(Author, Year)" format. Mix:
+   - "...as was pointed out by [Author] in [Year]..."
+   - "[Author]'s work from [Year], which was only encountered recently..."
+   - "It was noted in [Author] ([Year]) that..."
+
+10. SENTENCE OPENERS — ROTATE THESE
+    Never fall into a pattern. Use a mix of:
+    - Subject-first: "The results were..."
+    - Prepositional: "In this case, it was found that..."
+    - Temporal: "At that point, the decision was made to..."
+    - Concessive: "Despite this, it was still believed that..."
+    - Conditional: "Had this been known earlier, a different approach might have been taken."
+    - Fragmented: "Not ideal. But it was what was available."
+
+=== OUTPUT REQUIREMENTS ===
+- Maintain the original meaning and all factual content exactly
+- Do NOT add headers, bullet points, or formatting
+- Do NOT summarize or shorten — write fully covering every point
+- The output should read like a real person wrote it on their first or second draft
+- Write ONLY the rewritten text, nothing else`;
+
+// ── Tone modifiers appended to the system prompt ──────────────────────
+const TONE_MODIFIERS: Record<string, string> = {
+  low: `
+
+=== HUMANIZATION LEVEL: LOW ===
+Apply the rules lightly. Keep most of the original structure intact. Add a few contractions (don't, it's) and minor hedging phrases. Swap 1-2 sentence openers. The goal is a subtle polish — the text should read almost the same but with small human touches sprinkled in.`,
+
+  medium: `
+
+=== HUMANIZATION LEVEL: MEDIUM ===
+Apply the rules at a moderate level. Restructure some sentences, add contractions throughout, inject hedging phrases, and vary sentence openers more noticeably. Use passive voice in a few places. Break up any overly uniform paragraphs. The text should feel clearly rewritten but still faithful to the original meaning.`,
+
+  high: `
+
+=== HUMANIZATION LEVEL: HIGH ===
+Apply all the rules aggressively. Rewrite most sentences from scratch while preserving meaning. Use heavy contractions, frequent hedging, varied openers, and deliberate imperfections (sentence fragments, abrupt stops, self-corrections). Mix formality levels within the same paragraph. The output should feel like a human wrote it from memory, not copied.`,
+
+  extra_high: `
+
+=== HUMANIZATION LEVEL: EXTRA HIGH ===
+Apply every rule at maximum intensity. Completely rewrite the text as if a human is explaining the topic conversationally from memory. Use sentence fragments, mid-thought pivots, casual asides ("honestly", "the thing is", "I mean"), heavy contractions, and raw imperfection. Destroy all uniformity — vary paragraph lengths wildly, mix short punchy lines with longer rambling ones. No two sentences should follow the same pattern. The result must feel indistinguishable from genuine human writing.`,
 };
 
 // Valid tones for validation
-const VALID_TONES = new Set(Object.keys(TONE_PERSONAS));
+const VALID_TONES = new Set(Object.keys(TONE_MODIFIERS));
 
 // ── Post-processing pipeline ──────────────────────────────────────────
 const BANNED_WORD_MAP: Record<string, string> = {
@@ -124,6 +165,10 @@ const BANNED_WORD_MAP: Record<string, string> = {
   "additionally": "also", "nevertheless": "still", "consequently": "so",
   "subsequently": "then", "henceforth": "from now on", "whereas": "while",
   "thus": "so", "thereby": "which", "however": "but",
+  "synergy": "benefit", "ecosystem": "system", "empower": "help",
+  "innovative": "new", "transformative": "big", "harness": "use",
+  "underpin": "support", "avenue": "way", "facet": "part",
+  "beacon": "example", "testament": "proof", "groundbreaking": "new",
 };
 
 const BANNED_REGEXES = Object.keys(BANNED_WORD_MAP).map(
@@ -197,17 +242,39 @@ function postProcess(text: string): string {
   return out;
 }
 
-// ── API helper ────────────────────────────────────────────────────────
-function getApiKey(): string {
-  const apiKey = process.env.GROK_API_KEY;
-  if (!apiKey) throw new Error("Grok API key not configured");
-  return apiKey;
+// ── API helpers (3 providers) ─────────────────────────────────────────
+
+// Generic chat completion request/response shape
+interface ChatMessage {
+  role: string;
+  content: string;
 }
 
-async function xaiRequest(
-  apiKey: string,
-  body: Record<string, unknown>
-): Promise<Record<string, unknown>> {
+interface ChatCompletionResult {
+  content?: string;
+  tool_call_args?: string;
+}
+
+// ── Grok Non-Reasoning / x.ai (Monkey) ────────────────────────────────
+async function callGrokNonReasoning(
+  messages: ChatMessage[],
+  options: { temperature?: number; tools?: unknown; tool_choice?: unknown; top_p?: number }
+): Promise<ChatCompletionResult> {
+  const apiKey = process.env.GROK_API_KEY;
+  if (!apiKey) throw new Error("Grok API key not configured");
+
+  const body: Record<string, unknown> = {
+    model: "grok-4-1-fast-non-reasoning",
+    messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    temperature: options.temperature ?? 0.7,
+    top_p: options.top_p ?? 0.95,
+  };
+
+  if (options.tools) {
+    body.tools = options.tools;
+    body.tool_choice = options.tool_choice;
+  }
+
   const response = await fetch("https://api.x.ai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -218,9 +285,117 @@ async function xaiRequest(
   });
 
   if (response.status === 429) throw new Error("MODEL_BUSY");
-  if (!response.ok) throw new Error("MODEL_ERROR");
-  return response.json() as Promise<Record<string, unknown>>;
+  if (!response.ok) {
+    const errBody = await response.text();
+    console.error("Grok non-reasoning error:", response.status, errBody);
+    throw new Error("MODEL_ERROR");
+  }
+
+  const data = await response.json();
+  const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+  if (toolCall) {
+    return { tool_call_args: toolCall.function.arguments };
+  }
+  return { content: data.choices?.[0]?.message?.content };
 }
+
+// ── Grok Reasoning / x.ai (Monk) ─────────────────────────────────────
+async function callGrokReasoning(
+  messages: ChatMessage[],
+  options: { temperature?: number; tools?: unknown; tool_choice?: unknown; top_p?: number }
+): Promise<ChatCompletionResult> {
+  const apiKey = process.env.GROK_API_KEY;
+  if (!apiKey) throw new Error("Grok API key not configured");
+
+  const body: Record<string, unknown> = {
+    model: "grok-4-1-fast-reasoning",
+    messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    temperature: options.temperature ?? 0.7,
+    top_p: options.top_p ?? 0.95,
+  };
+
+  if (options.tools) {
+    body.tools = options.tools;
+    body.tool_choice = options.tool_choice;
+  }
+
+  const response = await fetch("https://api.x.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (response.status === 429) throw new Error("MODEL_BUSY");
+  if (!response.ok) {
+    const errBody = await response.text();
+    console.error("Grok reasoning error:", response.status, errBody);
+    throw new Error("MODEL_ERROR");
+  }
+
+  const data = await response.json();
+  const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+  if (toolCall) {
+    return { tool_call_args: toolCall.function.arguments };
+  }
+  return { content: data.choices?.[0]?.message?.content };
+}
+
+// ── Kimi K2.5 / Moonshot (Hypermonk) ─────────────────────────────────
+async function callKimi(
+  messages: ChatMessage[],
+  options: { temperature?: number; tools?: unknown; tool_choice?: unknown; frequency_penalty?: number; presence_penalty?: number }
+): Promise<ChatCompletionResult> {
+  const apiKey = process.env.KIMI_API_KEY;
+  if (!apiKey) throw new Error("Kimi API key not configured");
+
+  // K2.5 constraints: thinking enabled → temperature must be 1;
+  // thinking disabled (required for tool_choice) → temperature must be 0.6.
+  // frequency_penalty, presence_penalty, top_p are NOT supported.
+  const useTools = !!options.tools;
+  const body: Record<string, unknown> = {
+    model: "kimi-k2.5",
+    messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    temperature: useTools ? 0.6 : 1,
+  };
+
+  if (useTools) {
+    body.tools = options.tools;
+    body.tool_choice = options.tool_choice;
+    body.thinking = { type: "disabled" };
+  }
+
+  const response = await fetch("https://api.moonshot.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (response.status === 429) throw new Error("MODEL_BUSY");
+  if (!response.ok) {
+    const errBody = await response.text();
+    console.error("Kimi error:", response.status, errBody);
+    throw new Error("MODEL_ERROR");
+  }
+
+  const data = await response.json();
+  const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+  if (toolCall) {
+    return { tool_call_args: toolCall.function.arguments };
+  }
+  return { content: data.choices?.[0]?.message?.content };
+}
+
+// Provider caller type
+type ProviderCaller = (
+  messages: ChatMessage[],
+  options: Record<string, unknown>
+) => Promise<ChatCompletionResult>;
 
 // ── Step 1: Extract key points using tool/function calling ────────────
 interface ExtractedContent {
@@ -228,16 +403,15 @@ interface ExtractedContent {
   key_points: string[];
   original_tone: string;
   word_count: number;
+  has_citations: boolean;
 }
 
 async function extractContent(
   text: string,
-  modelName: string,
-  apiKey: string
+  caller: ProviderCaller
 ): Promise<ExtractedContent> {
-  const data = await xaiRequest(apiKey, {
-    model: modelName,
-    messages: [
+  const result = await caller(
+    [
       {
         role: "system",
         content: "You are a content analyst. Use the extract_content tool to break down the given text into its core ideas and information. Capture EVERY point — don't miss details.",
@@ -247,84 +421,72 @@ async function extractContent(
         content: text,
       },
     ],
-    tools: [EXTRACT_TOOL],
-    tool_choice: { type: "function", function: { name: "extract_content" } },
-    temperature: 0.3,
-  });
+    {
+      tools: [EXTRACT_TOOL],
+      tool_choice: { type: "function", function: { name: "extract_content" } },
+      temperature: 0.3,
+    }
+  );
 
-  // Parse the tool call response
-  const choices = data.choices as Array<{
-    message: {
-      tool_calls?: Array<{
-        function: { arguments: string };
-      }>;
-    };
-  }>;
-
-  const toolCall = choices?.[0]?.message?.tool_calls?.[0];
-  if (!toolCall) throw new Error("MODEL_ERROR");
-
-  const parsed = JSON.parse(toolCall.function.arguments) as ExtractedContent;
-  return parsed;
+  if (!result.tool_call_args) throw new Error("MODEL_ERROR");
+  return JSON.parse(result.tool_call_args) as ExtractedContent;
 }
 
-// ── Step 2: Generate natural text from key points ─────────────────────
+// ── Step 2: Generate humanized text from key points ───────────────────
 async function generateFromPoints(
   extracted: ExtractedContent,
   tone: string,
-  modelName: string,
-  apiKey: string
+  caller: ProviderCaller
 ): Promise<string> {
-  const persona = TONE_PERSONAS[tone] || TONE_PERSONAS.casual;
+  const toneModifier = TONE_MODIFIERS[tone] || TONE_MODIFIERS.low;
 
-  // Build the key points as a simple list — this is ALL the model sees
-  // It never sees the original AI-written text
   const pointsList = extracted.key_points
     .map((p, i) => `${i + 1}. ${p}`)
     .join("\n");
 
-  const data = await xaiRequest(apiKey, {
-    model: modelName,
-    messages: [
+  const citationNote = extracted.has_citations
+    ? "\nThe original text contained citations/references. Apply Rule 9 (vary citation styles) when including them."
+    : "";
+
+  const result = await caller(
+    [
       {
         role: "system",
-        content: persona,
+        content: HUMANIZER_SYSTEM + toneModifier,
       },
       {
         role: "user",
-        content: `Here are some facts and ideas about "${extracted.subject}". Write about them in your own words. Cover all the points. Aim for roughly ${extracted.word_count} words. Don't use bullet points or numbered lists — write in paragraphs.
+        content: `Write about the following topic: "${extracted.subject}"
 
+Cover ALL of these points in flowing prose (no bullet points, no numbered lists). Aim for roughly ${Math.min(extracted.word_count, 500)} words.${citationNote}
+
+Key points to cover:
 ${pointsList}`,
       },
     ],
-    temperature: 0.9,
-    top_p: 0.95,
-    frequency_penalty: 0.3,
-    presence_penalty: 0.3,
-  });
+    {
+      temperature: 0.9,
+      top_p: 0.95,
+      frequency_penalty: 0.4,
+      presence_penalty: 0.4,
+    }
+  );
 
-  const choices = data.choices as Array<{
-    message: { content?: string };
-  }>;
-
-  const content = choices?.[0]?.message?.content;
-  if (!content) throw new Error("MODEL_ERROR");
-  return content;
+  if (!result.content) throw new Error("MODEL_ERROR");
+  return result.content;
 }
 
 // ── Full pipeline: extract → generate → post-process ──────────────────
 async function humanizePipeline(
   text: string,
   tone: string,
-  modelName: string
+  caller: ProviderCaller
 ): Promise<string> {
-  const apiKey = getApiKey();
-
   // Step 1: Extract key points via tool calling
-  const extracted = await extractContent(text, modelName, apiKey);
+  const extracted = await extractContent(text, caller);
 
   // Step 2: Generate from points (model never sees original text)
-  const generated = await generateFromPoints(extracted, tone, modelName, apiKey);
+  const generated = await generateFromPoints(extracted, tone, caller);
 
   // Step 3: Post-process
   return postProcess(generated);
@@ -339,25 +501,34 @@ export const humanize = action({
   },
   handler: async (_ctx, args) => {
     const { text, tone, model } = args;
+    const inputWordCount = text.trim().split(/\s+/).filter(Boolean).length;
 
     if (!text.trim()) {
       throw new Error("Text is required");
     }
 
+    if (inputWordCount > MAX_INPUT_WORDS) {
+      throw new Error(`Text must be ${MAX_INPUT_WORDS} words or fewer`);
+    }
+
     if (!VALID_TONES.has(tone)) {
-      throw new Error("Valid tone is required (casual, professional, academic, creative)");
+      throw new Error("Valid tone is required (low, medium, high, extra_high)");
     }
 
     try {
       if (model === "monk") {
-        return await humanizePipeline(text, tone, "grok-4.20-beta-0309-non-reasoning");
+        // Justin Monk → Grok Reasoning (x.ai)
+        return await humanizePipeline(text, tone, callGrokReasoning);
       }
       if (model === "hypermonk") {
-        return await humanizePipeline(text, tone, "grok-4.20-beta-0309-reasoning");
+        // Arromal-hypermonk → Kimi K2.5 (Moonshot)
+        return await humanizePipeline(text, tone, callKimi);
       }
-      return await humanizePipeline(text, tone, "grok-4-1-fast-reasoning");
+      // Monkey → Grok Non-Reasoning (x.ai)
+      return await humanizePipeline(text, tone, callGrokNonReasoning);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "";
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Humanize error:", msg);
       if (msg === "MODEL_BUSY") {
         throw new Error(
           "This model is currently busy due to high demand. Please try again in a moment or switch to a different model."

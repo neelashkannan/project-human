@@ -9,52 +9,77 @@ export default function Home() {
   };
 
   return (
-    <div>
-      {/* ── Hero ── */}
-      <section
-        id="hero"
-        className="min-h-[60vh] flex flex-col items-center justify-center px-4 text-center py-20"
-      >
-        <div className="anim-stagger-1 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[var(--accent-muted)] border border-[var(--accent)]/20 text-sm text-[var(--accent-hover)] mb-8">
-          <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
-          Powered by Neelash Intelligence
+    <div className="pb-6">
+      <section id="hero" className="px-4 pb-12 pt-10 sm:pt-14">
+        <div className="mx-auto max-w-6xl">
+          <div className="mx-auto max-w-3xl text-center">
+            <div className="neu-pill anim-stagger-1 inline-flex items-center gap-2 px-4 py-1.5 text-sm text-[var(--neu-text-secondary)]">
+              <span className="h-2 w-2 rounded-full bg-[var(--neu-accent)]" />
+              Built by neelash intelligence
+            </div>
+
+            <h1 className="anim-stagger-2 mt-6 text-5xl font-semibold tracking-[-0.05em] text-[var(--neu-text)] sm:text-6xl md:text-7xl">
+              Make AI writing
+              <span className="block text-gradient">feel naturally human.</span>
+            </h1>
+
+            <p className="anim-stagger-3 mx-auto mt-6 max-w-2xl text-lg leading-8 text-[var(--neu-text-secondary)] sm:text-xl">
+              A clean rewriting workspace for turning raw AI output into smoother, more convincing copy without the noise of an overdesigned interface.
+            </p>
+
+            <div className="anim-stagger-4 mt-8 flex flex-wrap items-center justify-center gap-3">
+              <button
+                onClick={() => scrollTo("humanize")}
+                className="neu-btn-primary px-8 py-3.5 text-base"
+              >
+                Start Humanizing
+              </button>
+              <button
+                onClick={() => scrollTo("history")}
+                className="neu-btn-sm px-5 py-3 text-sm"
+              >
+                Recent History
+              </button>
+            </div>
+          </div>
         </div>
-
-        <h1 className="anim-stagger-2 text-4xl sm:text-6xl font-bold tracking-tight mb-5 leading-[1.1]">
-          <span className="text-[var(--text)]">Make AI Text</span>
-          <br />
-          <span className="text-gradient">Sound Human</span>
-        </h1>
-
-        <p className="anim-stagger-3 text-lg text-[var(--text-secondary)] max-w-xl mx-auto mb-10 leading-relaxed">
-          Instantly transform AI-generated text into natural, authentic writing.
-          Pick a tone and go.
-        </p>
-
-        <button
-          onClick={() => scrollTo("humanize")}
-          className="anim-stagger-4 btn-primary btn-ripple px-8 py-3.5 text-base animate-pulse-glow"
-        >
-          Start Humanizing
-        </button>
       </section>
 
-      {/* ── Humanize ── */}
-      <section id="humanize" className="px-4 pb-20 scroll-mt-20">
-        <div className="max-w-4xl mx-auto animate-fade-up">
-          <div className="card p-6 sm:p-8">
+      <section id="humanize" className="scroll-mt-20 px-4 pb-20">
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="section-kicker">Workspace</p>
+              <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-[var(--neu-text)] sm:text-4xl">
+                A focused rewrite canvas.
+              </h2>
+            </div>
+            <p className="max-w-xl text-sm leading-6 text-[var(--neu-text-secondary)] sm:text-right">
+              Choose the model, set intensity, paste your source, and review the result in one clean side-by-side view.
+            </p>
+          </div>
+
+          <div className="card animate-fade-up p-4 sm:p-6 lg:p-8">
             <HumanizeForm />
           </div>
         </div>
       </section>
 
-      {/* ── History ── */}
-      <section id="history" className="px-4 pb-28 scroll-mt-20">
-        <div className="max-w-4xl mx-auto animate-fade-up">
-          <h2 className="text-xl font-semibold text-[var(--text)] mb-4">
-            Recent Conversions
-          </h2>
-          <HistoryList />
+      <section id="history" className="scroll-mt-20 px-4 pb-28">
+        <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
+          <div className="space-y-4">
+            <p className="section-kicker">Archive</p>
+            <h2 className="text-3xl font-semibold tracking-[-0.04em] text-[var(--neu-text)]">
+              Recent conversions.
+            </h2>
+            <p className="text-base leading-7 text-[var(--neu-text-secondary)]">
+              Expand, compare, copy, or remove previous rewrites without leaving the main workspace.
+            </p>
+          </div>
+
+          <div className="card animate-fade-up p-4 sm:p-6">
+            <HistoryList />
+          </div>
         </div>
       </section>
     </div>

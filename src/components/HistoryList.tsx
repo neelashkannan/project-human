@@ -14,14 +14,12 @@ interface Conversion {
   createdAt: number;
 }
 
-const TONE_EMOJI: Record<string, string> = {
-  casual: "💬",
-  professional: "💼",
-  academic: "🎓",
-  creative: "🎨",
-};
+const IconDoc = () => (
+  <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+  </svg>
+);
 
-/** Connected version (mounts only when Convex is available) */
 function ConnectedHistoryList() {
   const { user } = useAuth();
   const conversions = useQuery(api.conversions.getRecent, { userId: user?.uid }) as Conversion[] | undefined;
@@ -34,8 +32,8 @@ export default function HistoryList() {
   if (!convexAvailable) {
     return (
       <div className="text-center py-12 animate-blur-in">
-        <div className="text-4xl mb-3 animate-float">✨</div>
-        <p className="text-[var(--text-muted)]">
+        <IconDoc />
+        <p className="text-[var(--neu-text-muted)] mt-3">
           No conversions yet. Humanize some text to see it here.
         </p>
       </div>
@@ -65,7 +63,6 @@ function HistoryListUI({
   const handleRemove = async (id: Id<"conversions">) => {
     if (!user?.uid) return;
     setRemovingId(id);
-    // Wait for fade-out animation
     setTimeout(async () => {
       await removeConversion({ id, userId: user.uid });
       setRemovingId(null);
@@ -85,8 +82,10 @@ function HistoryListUI({
   if (conversions.length === 0) {
     return (
       <div className="text-center py-12 animate-blur-in">
-        <div className="text-4xl mb-3 animate-float">✨</div>
-        <p className="text-[var(--text-muted)]">
+        <div className="flex justify-center mb-3 text-[var(--neu-text-muted)]">
+          <IconDoc />
+        </div>
+        <p className="text-[var(--neu-text-muted)]">
           No conversions yet. Humanize some text to see it here.
         </p>
       </div>
@@ -105,15 +104,15 @@ function HistoryListUI({
         >
           <button
             onClick={() => setExpandedId(expandedId === item._id ? null : item._id)}
-            className="w-full px-4 py-3 text-left flex items-center justify-between gap-3 hover:bg-[var(--surface-2)] transition-all duration-200"
+            className="w-full px-4 py-3 text-left flex items-center justify-between gap-3 hover:bg-black/[0.02] transition-all duration-200"
           >
             <div className="min-w-0 flex-1 flex items-center gap-3">
-              <span className="text-lg shrink-0">{TONE_EMOJI[item.tone] ?? "📝"}</span>
+              <span className="text-[var(--neu-text-secondary)] shrink-0"><IconDoc /></span>
               <div className="min-w-0">
-                <p className="text-sm text-[var(--text)] truncate">
+                <p className="text-sm text-[var(--neu-text)] truncate">
                   {item.originalText.slice(0, 120)}
                 </p>
-                <p className="text-xs text-[var(--text-muted)] mt-1">
+                <p className="text-xs text-[var(--neu-text-muted)] mt-1">
                   <span className="capitalize">{item.tone}</span>
                   {" · "}
                   {new Date(item.createdAt).toLocaleDateString()}
@@ -121,7 +120,7 @@ function HistoryListUI({
               </div>
             </div>
             <svg
-              className={`w-4 h-4 text-[var(--text-muted)] shrink-0 transition-transform duration-300 ${
+              className={`w-4 h-4 text-[var(--neu-text-muted)] shrink-0 transition-transform duration-300 ${
                 expandedId === item._id ? "rotate-180" : ""
               }`}
               fill="none"
@@ -133,17 +132,17 @@ function HistoryListUI({
           </button>
 
           {expandedId === item._id && (
-            <div className="px-4 pb-4 space-y-3 border-t border-[var(--border)] animate-expand">
+            <div className="px-4 pb-4 space-y-3 border-t border-[var(--neu-border)] animate-expand">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3">
                 <div className="animate-slide-left" style={{ animationDelay: "0.05s" }}>
-                  <p className="text-xs font-medium text-[var(--text-muted)] mb-1.5">Original</p>
-                  <div className="p-3 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-sm text-[var(--text-secondary)] whitespace-pre-wrap max-h-40 overflow-auto">
+                  <p className="text-xs font-medium text-[var(--neu-text-muted)] mb-1.5">Original</p>
+                  <div className="p-3 rounded-lg text-sm text-[var(--neu-text-secondary)] whitespace-pre-wrap max-h-40 overflow-auto neu-pressed" style={{ borderRadius: 10 }}>
                     {item.originalText}
                   </div>
                 </div>
                 <div className="animate-slide-right" style={{ animationDelay: "0.1s" }}>
-                  <p className="text-xs font-medium text-[var(--text-muted)] mb-1.5">Humanized</p>
-                  <div className="p-3 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-sm text-[var(--text)] whitespace-pre-wrap max-h-40 overflow-auto">
+                  <p className="text-xs font-medium text-[var(--neu-text-muted)] mb-1.5">Humanized</p>
+                  <div className="p-3 rounded-lg text-sm text-[var(--neu-text)] whitespace-pre-wrap max-h-40 overflow-auto neu-pressed" style={{ borderRadius: 10 }}>
                     {item.humanizedText}
                   </div>
                 </div>
@@ -151,17 +150,15 @@ function HistoryListUI({
               <div className="flex gap-2">
                 <button
                   onClick={() => handleCopy(item.humanizedText, item._id)}
-                  className={`px-3 py-1.5 text-xs rounded-md border transition-all duration-200 active:scale-95 ${
-                    copiedId === item._id
-                      ? "bg-[var(--success)]/15 text-[var(--success)] border-[var(--success)]/30 animate-badge-pop"
-                      : "bg-[var(--surface-2)] text-[var(--text-secondary)] hover:text-[var(--text)] border-[var(--border)]"
+                  className={`neu-btn-sm transition-all duration-200 active:scale-95 ${
+                    copiedId === item._id ? "text-[var(--neu-success)] border-[var(--neu-success)] animate-badge-pop" : ""
                   }`}
                 >
-                  {copiedId === item._id ? "✓ Copied!" : "Copy"}
+                  {copiedId === item._id ? "Copied" : "Copy"}
                 </button>
                 <button
                   onClick={() => handleRemove(item._id)}
-                  className="px-3 py-1.5 text-xs rounded-md text-[var(--danger)] hover:bg-red-500/10 transition-all duration-200 active:scale-95"
+                  className="px-3 py-1.5 text-xs rounded-md text-[var(--neu-danger)] hover:bg-red-500/10 transition-all duration-200 active:scale-95"
                 >
                   Delete
                 </button>
