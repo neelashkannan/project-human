@@ -6,6 +6,7 @@ import { useAuth } from "./AuthProvider";
 import {
   HUMANIZE_MODELS,
   HUMANIZE_TONES,
+  HUMANIZE_PERSPECTIVES,
   useHumanizeDock,
 } from "./HumanizeDockContext";
 import { useTheme } from "./ThemeProvider";
@@ -68,10 +69,10 @@ const MODEL_ICONS: Record<string, React.ReactNode> = {
 };
 
 const TONE_ICONS: Record<string, React.ReactNode> = {
-  low: <IconGauge className="h-4 w-4" />,
-  medium: <IconGauge className="h-4 w-4" />,
-  high: <IconGauge className="h-4 w-4" />,
-  extra_high: <IconGauge className="h-4 w-4" />,
+  casual: <IconGauge className="h-4 w-4" />,
+  academic: <IconGauge className="h-4 w-4" />,
+  professional: <IconGauge className="h-4 w-4" />,
+  creative: <IconGauge className="h-4 w-4" />,
 };
 
 const MODEL_DOCK_LABELS: Record<string, string> = {
@@ -81,10 +82,20 @@ const MODEL_DOCK_LABELS: Record<string, string> = {
 };
 
 const TONE_DOCK_LABELS: Record<string, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  extra_high: "Extra High",
+  casual: "Casual",
+  academic: "Academic",
+  professional: "Professional",
+  creative: "Creative",
+};
+
+const PERSPECTIVE_ICONS: Record<string, React.ReactNode> = {
+  first_person: <IconBrain className="h-4 w-4" />,
+  third_person: <IconBrain className="h-4 w-4" />,
+};
+
+const PERSPECTIVE_DOCK_LABELS: Record<string, string> = {
+  first_person: "1st Person",
+  third_person: "3rd Person",
 };
 
 const DOCK_ITEMS = [
@@ -121,6 +132,7 @@ export default function Navbar() {
   const [activeSection, setActiveSection] = useState("hero");
   const [modelOpen, setModelOpen] = useState(false);
   const [toneOpen, setToneOpen] = useState(false);
+  const [perspectiveOpen, setPerspectiveOpen] = useState(false);
   const controlsRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
   const { user, loading, signInWithGoogle, signOut } = useAuth();
@@ -130,6 +142,8 @@ export default function Navbar() {
     setModel,
     tone,
     setTone,
+    perspective,
+    setPerspective,
     runSubmit,
     loading: humanizing,
     canSubmit,
@@ -165,6 +179,7 @@ export default function Navbar() {
       if (!controlsRef.current?.contains(event.target as Node)) {
         setModelOpen(false);
         setToneOpen(false);
+        setPerspectiveOpen(false);
       }
     };
 
@@ -175,6 +190,7 @@ export default function Navbar() {
   useEffect(() => {
     setModelOpen(false);
     setToneOpen(false);
+    setPerspectiveOpen(false);
   }, [pathname]);
 
   const scrollTo = (id: string) => {
@@ -224,6 +240,7 @@ export default function Navbar() {
                     onClick={() => {
                       setModelOpen((current) => !current);
                       setToneOpen(false);
+                      setPerspectiveOpen(false);
                     }}
                     className="dock-control"
                   >
@@ -261,6 +278,7 @@ export default function Navbar() {
                     onClick={() => {
                       setToneOpen((current) => !current);
                       setModelOpen(false);
+                      setPerspectiveOpen(false);
                     }}
                     className="dock-control"
                   >
@@ -283,6 +301,41 @@ export default function Navbar() {
                           className={`neu-dropdown-item ${tone === item.id ? "neu-dropdown-active" : ""}`}
                         >
                           {TONE_ICONS[item.id]}
+                          <span className="font-semibold text-sm">{item.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      setPerspectiveOpen((current) => !current);
+                      setModelOpen(false);
+                      setToneOpen(false);
+                    }}
+                    className="dock-control"
+                  >
+                    <span className="dock-control-label">View</span>
+                    <span className="dock-control-value">
+                      {PERSPECTIVE_ICONS[perspective]}
+                      <span>{PERSPECTIVE_DOCK_LABELS[perspective]}</span>
+                    </span>
+                    <IconChevron open={perspectiveOpen} />
+                  </button>
+                  {perspectiveOpen && (
+                    <div className="dock-dropdown min-w-[180px]">
+                      {HUMANIZE_PERSPECTIVES.map((item) => (
+                        <button
+                          key={item.id}
+                          onClick={() => {
+                            setPerspective(item.id);
+                            setPerspectiveOpen(false);
+                          }}
+                          className={`neu-dropdown-item ${perspective === item.id ? "neu-dropdown-active" : ""}`}
+                        >
+                          {PERSPECTIVE_ICONS[item.id]}
                           <span className="font-semibold text-sm">{item.label}</span>
                         </button>
                       ))}

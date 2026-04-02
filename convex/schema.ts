@@ -15,6 +15,7 @@ export default defineSchema({
     originalText: v.string(),
     humanizedText: v.string(),
     tone: v.string(),
+    perspective: v.optional(v.string()),
     model: v.optional(v.string()),
     createdAt: v.number(),
     userId: v.optional(v.string()),

@@ -17,6 +17,8 @@ interface HumanizeDockContextValue {
   setModel: (value: string) => void;
   tone: string;
   setTone: (value: string) => void;
+  perspective: string;
+  setPerspective: (value: string) => void;
   wordCount: number;
   setWordCount: (value: number) => void;
   canSubmit: boolean;
@@ -36,15 +38,21 @@ export const HUMANIZE_MODELS = [
 ];
 
 export const HUMANIZE_TONES = [
-  { id: "low", label: "Low" },
-  { id: "medium", label: "Medium" },
-  { id: "high", label: "High" },
-  { id: "extra_high", label: "Extra High" },
+  { id: "casual", label: "Casual" },
+  { id: "academic", label: "Academic" },
+  { id: "professional", label: "Professional" },
+  { id: "creative", label: "Creative" },
+];
+
+export const HUMANIZE_PERSPECTIVES = [
+  { id: "first_person", label: "First Person" },
+  { id: "third_person", label: "Third Person" },
 ];
 
 export function HumanizeDockProvider({ children }: { children: ReactNode }) {
   const [model, setModel] = useState("monkey");
-  const [tone, setTone] = useState("low");
+  const [tone, setTone] = useState("casual");
+  const [perspective, setPerspective] = useState("first_person");
   const [wordCount, setWordCount] = useState(0);
   const [canSubmit, setCanSubmit] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -70,6 +78,8 @@ export function HumanizeDockProvider({ children }: { children: ReactNode }) {
       setModel,
       tone,
       setTone,
+      perspective,
+      setPerspective,
       wordCount,
       setWordCount,
       canSubmit,
@@ -79,7 +89,7 @@ export function HumanizeDockProvider({ children }: { children: ReactNode }) {
       registerSubmit,
       runSubmit,
     }),
-    [canSubmit, loading, model, registerSubmit, runSubmit, tone, wordCount]
+    [canSubmit, loading, model, perspective, registerSubmit, runSubmit, tone, wordCount]
   );
 
   return <HumanizeDockContext.Provider value={value}>{children}</HumanizeDockContext.Provider>;

@@ -125,29 +125,44 @@ const HUMANIZER_SYSTEM = `You are a human rewriter. Your job is to take the prov
 
 // ── Tone modifiers appended to the system prompt ──────────────────────
 const TONE_MODIFIERS: Record<string, string> = {
-  low: `
+  casual: `
 
-=== HUMANIZATION LEVEL: LOW ===
-Apply the rules lightly. Keep most of the original structure intact. Add a few contractions (don't, it's) and minor hedging phrases. Swap 1-2 sentence openers. The goal is a subtle polish — the text should read almost the same but with small human touches sprinkled in.`,
+=== TONE: CASUAL ===
+Write in a relaxed, conversational tone. Use contractions freely (don't, it's, we're). Keep sentences short and punchy where possible. Use everyday vocabulary — no jargon or overly formal phrasing. Imagine you're explaining something to a friend over coffee. Throw in colloquial expressions naturally. The text should feel approachable, warm, and easy to read.`,
 
-  medium: `
+  academic: `
 
-=== HUMANIZATION LEVEL: MEDIUM ===
-Apply the rules at a moderate level. Restructure some sentences, add contractions throughout, inject hedging phrases, and vary sentence openers more noticeably. Use passive voice in a few places. Break up any overly uniform paragraphs. The text should feel clearly rewritten but still faithful to the original meaning.`,
+=== TONE: ACADEMIC ===
+Write in a formal, scholarly tone appropriate for an essay, research paper, or academic submission. Use passive voice more heavily. Include hedging language ("it can be argued that", "evidence suggests"). Maintain objectivity — avoid first-person opinions unless presenting analysis. Use precise, discipline-appropriate vocabulary. Vary sentence complexity with some longer, multi-clause sentences. The text should read like it was written by a diligent university student.`,
 
-  high: `
+  professional: `
 
-=== HUMANIZATION LEVEL: HIGH ===
-Apply all the rules aggressively. Rewrite most sentences from scratch while preserving meaning. Use heavy contractions, frequent hedging, varied openers, and deliberate imperfections (sentence fragments, abrupt stops, self-corrections). Mix formality levels within the same paragraph. The output should feel like a human wrote it from memory, not copied.`,
+=== TONE: PROFESSIONAL ===
+Write in a polished, business-appropriate tone. Be clear, concise, and direct. Use confident but measured language — avoid being overly casual or overly stiff. Structure points logically. Use proper grammar and minimal contractions. The text should feel like a well-written report, email, or business document — authoritative yet accessible.`,
 
-  extra_high: `
+  creative: `
 
-=== HUMANIZATION LEVEL: EXTRA HIGH ===
-Apply every rule at maximum intensity. Completely rewrite the text as if a human is explaining the topic conversationally from memory. Use sentence fragments, mid-thought pivots, casual asides ("honestly", "the thing is", "I mean"), heavy contractions, and raw imperfection. Destroy all uniformity — vary paragraph lengths wildly, mix short punchy lines with longer rambling ones. No two sentences should follow the same pattern. The result must feel indistinguishable from genuine human writing.`,
+=== TONE: CREATIVE ===
+Write with flair and personality. Use vivid language, metaphors, and varied rhythm. Play with sentence structure — mix fragments, long flowing sentences, and unexpected turns. Let the writing breathe with personality. Add color through descriptive language and original phrasing. The text should feel like it was written by someone with a distinctive voice who enjoys the craft of writing.`,
 };
 
 // Valid tones for validation
 const VALID_TONES = new Set(Object.keys(TONE_MODIFIERS));
+
+// ── Perspective modifiers appended after tone ─────────────────────────
+const PERSPECTIVE_MODIFIERS: Record<string, string> = {
+  first_person: `
+
+=== PERSPECTIVE: FIRST PERSON ===
+Write entirely in first person (I, me, my, we, our). The narrator is directly involved — sharing their own experience, analysis, or observations. Use phrases like "I found that...", "In my view...", "What I noticed was...". The text should feel personal and direct.`,
+
+  third_person: `
+
+=== PERSPECTIVE: THIRD PERSON ===
+Write entirely in third person. Never use "I", "me", "my", "we", or "our" (unless quoting). Refer to people, organizations, or concepts by name or with "they", "it", "one". Use constructions like "It was found that...", "The researchers noted...", "One might argue...". The text should feel objective and detached.`,
+};
+
+const VALID_PERSPECTIVES = new Set(Object.keys(PERSPECTIVE_MODIFIERS));
 
 // ── Post-processing pipeline ──────────────────────────────────────────
 const BANNED_WORD_MAP: Record<string, string> = {
@@ -436,9 +451,11 @@ async function extractContent(
 async function generateFromPoints(
   extracted: ExtractedContent,
   tone: string,
+  perspective: string,
   caller: ProviderCaller
 ): Promise<string> {
-  const toneModifier = TONE_MODIFIERS[tone] || TONE_MODIFIERS.low;
+  const toneModifier = TONE_MODIFIERS[tone] || TONE_MODIFIERS.casual;
+  const perspectiveModifier = PERSPECTIVE_MODIFIERS[perspective] || PERSPECTIVE_MODIFIERS.first_person;
 
   const pointsList = extracted.key_points
     .map((p, i) => `${i + 1}. ${p}`)
@@ -452,7 +469,7 @@ async function generateFromPoints(
     [
       {
         role: "system",
-        content: HUMANIZER_SYSTEM + toneModifier,
+        content: HUMANIZER_SYSTEM + toneModifier + perspectiveModifier,
       },
       {
         role: "user",
@@ -480,13 +497,14 @@ ${pointsList}`,
 async function humanizePipeline(
   text: string,
   tone: string,
+  perspective: string,
   caller: ProviderCaller
 ): Promise<string> {
   // Step 1: Extract key points via tool calling
   const extracted = await extractContent(text, caller);
 
   // Step 2: Generate from points (model never sees original text)
-  const generated = await generateFromPoints(extracted, tone, caller);
+  const generated = await generateFromPoints(extracted, tone, perspective, caller);
 
   // Step 3: Post-process
   return postProcess(generated);
@@ -497,10 +515,11 @@ export const humanize = action({
   args: {
     text: v.string(),
     tone: v.string(),
+    perspective: v.optional(v.string()),
     model: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
-    const { text, tone, model } = args;
+    const { text, tone, perspective = "first_person", model } = args;
     const inputWordCount = text.trim().split(/\s+/).filter(Boolean).length;
 
     if (!text.trim()) {
@@ -512,20 +531,24 @@ export const humanize = action({
     }
 
     if (!VALID_TONES.has(tone)) {
-      throw new Error("Valid tone is required (low, medium, high, extra_high)");
+      throw new Error("Valid tone is required (casual, academic, professional, creative)");
+    }
+
+    if (!VALID_PERSPECTIVES.has(perspective)) {
+      throw new Error("Valid perspective is required (first_person, third_person)");
     }
 
     try {
       if (model === "monk") {
         // Justin Monk → Grok Reasoning (x.ai)
-        return await humanizePipeline(text, tone, callGrokReasoning);
+        return await humanizePipeline(text, tone, perspective, callGrokReasoning);
       }
       if (model === "hypermonk") {
         // Arromal-hypermonk → Kimi K2.5 (Moonshot)
-        return await humanizePipeline(text, tone, callKimi);
+        return await humanizePipeline(text, tone, perspective, callKimi);
       }
       // Monkey → Grok Non-Reasoning (x.ai)
-      return await humanizePipeline(text, tone, callGrokNonReasoning);
+      return await humanizePipeline(text, tone, perspective, callGrokNonReasoning);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("Humanize error:", msg);

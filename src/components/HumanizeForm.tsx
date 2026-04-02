@@ -32,6 +32,7 @@ type SaveFn = ((args: {
   originalText: string;
   humanizedText: string;
   tone: string;
+  perspective?: string;
   model?: string;
   userId?: string;
 }) => Promise<unknown>) | null;
@@ -39,6 +40,7 @@ type SaveFn = ((args: {
 type HumanizeFn = ((args: {
   text: string;
   tone: string;
+  perspective?: string;
   model?: string;
 }) => Promise<string>) | null;
 
@@ -73,6 +75,7 @@ function FormUI({
   const {
     model,
     tone,
+    perspective,
     wordCount,
     setWordCount,
     setCanSubmit,
@@ -94,10 +97,10 @@ function FormUI({
     setOutputText("");
 
     try {
-      const humanizedText = await humanizeAction({ text: inputText.trim(), tone, model });
+      const humanizedText = await humanizeAction({ text: inputText.trim(), tone, perspective, model });
       setOutputText(humanizedText);
       if (saveConversion) {
-        try { await saveConversion({ originalText: inputText.trim(), humanizedText, tone, model, userId: user?.uid }); } catch { /* silent */ }
+        try { await saveConversion({ originalText: inputText.trim(), humanizedText, tone, perspective, model, userId: user?.uid }); } catch { /* silent */ }
       }
     } catch (err) {
       const raw = err instanceof Error ? err.message : "";
@@ -109,7 +112,7 @@ function FormUI({
       setShakeError(true);
       setTimeout(() => setShakeError(false), 500);
     } finally { setLoading(false); }
-  }, [humanizeAction, inputText, model, saveConversion, setLoading, tone, user?.uid]);
+  }, [humanizeAction, inputText, model, perspective, saveConversion, setLoading, tone, user?.uid]);
 
   useEffect(() => {
     if (!outputText) { setDisplayedText(""); return; }
